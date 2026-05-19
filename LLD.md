@@ -10,7 +10,7 @@ whatever ships.
 
 ## 1. Link layer (`src/link`)
 
-### 1.1 Darwin BPF channel (buffered baseline)
+### 1.1 Darwin feth link channels (buffered baseline)
 
 ```cpp
 struct BpfChannel {
@@ -21,7 +21,32 @@ struct BpfChannel {
     size_t                    bytes_valid;     // bytes returned by current read()
     size_t                    record_offset;   // next bpf_hdr in current buffer
 };
+
+enum class TxApi : uint8_t { Bpf, AfNdrv };
+
+struct TxChannel {
+    int     fd;
+    TxApi   api;  // chosen only from current-kernel Phase-02 spike evidence
+};
 ```
+
+Canonical setup creates `feth0` and `feth1`, peers them with
+`ifconfig feth1 peer feth0`, and brings both up. Sender and receiver are separate
+processes on opposite sides. `lo0` is never accepted because its
+`DLT_NULL`/`DLT_LOOP` records omit the Ethernet framing under test.
+
+Before Phase 02 can select `TxApi`, the spike performs two independent trials on
+the current macOS build:
+
+1. Bind BPF RX to `feth1`, require `DLT_EN10MB`, inject one complete marked frame
+   through BPF bound to `feth0`, and record write result plus actual delivery.
+2. Re-open/flush BPF RX on `feth1`, inject a different marked complete frame through
+   an `AF_NDRV` raw socket bound to `feth0`, and record send result plus delivery.
+
+Choose BPF when its frame is observed. Choose `AF_NDRV` only when BPF TX is not
+delivered and the `AF_NDRV` frame is observed. A successful syscall without BPF RX
+delivery is not success. The evidence records actual UTC time, macOS build, XNU
+version, SDK, DLT, syscall results, and delivery results. Re-run after OS upgrades.
 
 Setup order is fixed because Darwin requires the BPF read-buffer size before the
 descriptor is attached to an interface:
@@ -53,9 +78,10 @@ while offset + sizeof(bpf_hdr) <= bytes_read:
     offset += BPF_WORDALIGN(hdr.bh_hdrlen + hdr.bh_caplen)
 ```
 
-TX calls `write(fd, complete_ethernet_frame, frame_length)`. Darwin BPF processes
-one frame per write. The buffered path copies between kernel and userspace and is
-not equivalent to `PACKET_MMAP`/`TPACKET_V3` zero-copy semantics.
+When `TxApi::Bpf` is selected, TX calls one BPF `write()` per complete frame. When
+`TxApi::AfNdrv` is selected, TX binds an `AF_NDRV`/`SOCK_RAW` socket to the named
+feth interface and calls one `send()` per complete frame. Both remain copied paths;
+neither is equivalent to `PACKET_MMAP`/`TPACKET_V3` zero-copy semantics.
 
 The selected Darwin SDK and public XNU header do not expose `BIOCSETZBUF`,
 `BIOCROTZBUF`, or `BIOCGETZMAX`. A separate branch after Phase 03 may compile-probe
@@ -411,8 +437,8 @@ the claim agree.
 ```cpp
 enum class TimestampSource : uint8_t {
     BPF_RX_CAPTURE,
-    BPF_TX_MONOTONIC_BEFORE_WRITE,
-    BPF_TX_MONOTONIC_AFTER_WRITE,
+    LINK_TX_MONOTONIC_BEFORE_SYSCALL,
+    LINK_TX_MONOTONIC_AFTER_SYSCALL,
     TCP_RX_MONOTONIC_CMSG,
     APPLICATION_RTT_MONOTONIC,
 };
@@ -443,12 +469,11 @@ The custom stack has three distinct packet timestamps:
 - **RX capture**: `bpf_hdr.bh_tstamp`, assigned by the BPF capture path. Convert
   its Darwin `timeval32` representation carefully and retain the source tag.
 - **TX before/after**: `clock_gettime(CLOCK_MONOTONIC)` immediately before and
-  after BPF `write()`. No kernel-assigned or hardware TX completion timestamp is
+  after the selected BPF `write()` or `AF_NDRV` `send()`. No kernel-assigned or hardware TX completion timestamp is
   exposed for this path. The interval includes syscall entry/exit overhead.
 - **Application RTT**: one process records `CLOCK_MONOTONIC` before a request and
   after its response or acknowledgement. Phase 25 uses this as the primary latency
-  comparison so both transports share one clock and do not require synchronized
-  clocks across the two Macs.
+  comparison so both transports and both feth processes share one monotonic clock.
 
 The kernel-TCP baseline enables `SO_TIMESTAMP_MONOTONIC` on its socket and reads
 `SCM_TIMESTAMP_MONOTONIC` from `recvmsg()` control messages. That timestamp is not
@@ -456,9 +481,10 @@ used or described as the BPF timestamp source. Packet-level BPF and socket-cmsg
 measurements are diagnostic because their capture points differ; the report must
 not present them as equal-fidelity one-way latency measurements.
 
-Every raw run records timestamp source, macOS build, chip, interface, NIC/MTU,
-dummynet/PF configuration, and whether Instruments exposed the requested counters.
-No hardware timestamping precision is implied.
+Every raw run records timestamp source, macOS build, chip, feth interfaces/MTU,
+dummynet/PF configuration, selected TX API, and whether Instruments exposed the
+requested counters. Optional cross-host runs additionally record NICs and remain
+separate. No hardware timestamping precision is implied.
 
 ---
 

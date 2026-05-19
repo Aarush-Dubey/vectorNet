@@ -1,8 +1,9 @@
 # vectorNet
 
 Userspace IPv4 and custom transport stack for macOS/Darwin on Apple Silicon.
-Raw Ethernet integration will use buffered Berkeley Packet Filter devices. Phase 01
-contains buildable interfaces and platform scaffolding only; it performs no packet I/O.
+Raw Ethernet integration uses buffered Berkeley Packet Filter devices. Phase 02 opens
+and binds BPF to a canonical `feth0`/`feth1` pair, validates Ethernet DLT, discovers
+interface metadata, and sends frames. Buffered batch receive remains Phase 03 work.
 
 ## Build
 

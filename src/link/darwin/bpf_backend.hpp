@@ -15,9 +15,13 @@ namespace vectornet::link::darwin {
 
 class BpfBackend final {
 public:
+    BpfBackend(const BpfBackend&) = delete;
+    BpfBackend& operator=(const BpfBackend&) = delete;
+    ~BpfBackend();
+
     [[nodiscard]] static std::unique_ptr<BpfBackend> open(
         const LinkConfig& config,
-        std::error_code& error) noexcept;
+        std::error_code& error);
 
     [[nodiscard]] std::error_code poll_frames(
         FrameCallback callback,
@@ -28,7 +32,10 @@ public:
     [[nodiscard]] InterfaceInfo interface_info() const noexcept;
 
 private:
-    BpfBackend() = default;
+    BpfBackend(int fd, InterfaceInfo info) noexcept;
+
+    int fd_{-1};
+    InterfaceInfo info_{};
 };
 
 }  // namespace vectornet::link::darwin

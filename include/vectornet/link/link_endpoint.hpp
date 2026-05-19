@@ -19,6 +19,7 @@ struct LinkConfig {
 struct InterfaceInfo {
     std::array<std::uint8_t, 6> mac{};
     std::uint32_t mtu{0};
+    std::size_t bpf_buffer_bytes{0};
 };
 
 using FrameCallback = void (*)(void* context, std::span<const std::byte> frame) noexcept;

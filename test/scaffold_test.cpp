@@ -1,5 +1,6 @@
 #include "vectornet/link/link_endpoint.hpp"
 
+#include <limits>
 #include <system_error>
 #include <type_traits>
 
@@ -15,7 +16,7 @@ int main() {
                                                std::span<const std::byte>>);
 
     vectornet::link::LinkConfig config{
-        .interface_name = "en0",
+        .interface_name = "",
         .requested_buffer_bytes = 0,
         .promiscuous = false,
     };
@@ -25,13 +26,21 @@ int main() {
     if (endpoint) {
         return 1;
     }
-    if (error != std::errc::operation_not_supported) {
+    if (error != std::errc::invalid_argument) {
         return 2;
+    }
+
+    config.interface_name = "ignored";
+    config.requested_buffer_bytes =
+        static_cast<std::size_t>(std::numeric_limits<unsigned int>::max()) + 1U;
+    endpoint = vectornet::link::LinkEndpoint::open(config, error);
+    if (endpoint || error != std::errc::value_too_large) {
+        return 3;
     }
 
     vectornet::link::FrameCallback callback = &discard_frame;
     if (callback == nullptr) {
-        return 3;
+        return 4;
     }
 
     return 0;

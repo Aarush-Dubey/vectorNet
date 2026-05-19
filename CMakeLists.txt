@@ -7,11 +7,11 @@ endif()
 project(vectorNet VERSION 0.1.0 LANGUAGES CXX)
 
 if(NOT APPLE)
-    message(FATAL_ERROR "vectorNet Phase 01 supports macOS/Darwin only")
+    message(FATAL_ERROR "vectorNet supports macOS/Darwin only")
 endif()
 
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
-    message(FATAL_ERROR "vectorNet Phase 01 supports Apple Silicon only")
+    message(FATAL_ERROR "vectorNet supports Apple Silicon only")
 endif()
 
 include(CTest)
@@ -30,6 +30,27 @@ target_include_directories(vectornet_link
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_compile_options(vectornet_link PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
+add_executable(vectornet_link_probe tools/link_probe.cpp)
+target_compile_features(vectornet_link_probe PRIVATE cxx_std_20)
+target_link_libraries(vectornet_link_probe PRIVATE vectornet::link)
+target_compile_options(vectornet_link_probe PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
+add_executable(vectornet_ndrv_probe tools/ndrv_probe.cpp)
+target_compile_features(vectornet_ndrv_probe PRIVATE cxx_std_20)
+target_compile_options(vectornet_ndrv_probe PRIVATE
     -Wall
     -Wextra
     -Wpedantic

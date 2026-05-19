@@ -44,12 +44,12 @@ congestion control beyond AIMD (no CUBIC/BBR-style implementation), multi-homing
                                           │ Ethernet payload
                          ┌───────────────▼──────────────┐
                          │        Link (src/link)         │
-                         │  Darwin BPF buffered I/O,       │
+                         │  Darwin buffered link I/O,      │
                          │  ARP resolve + cache            │
                          └───────────────┬──────────────┘
                                           │ raw frames
                          ┌───────────────▼──────────────┐
-                         │         NIC (kernel driver)     │
+                         │  feth peer / optional real NIC  │
                          └─────────────────────────────┘
 
         ┌───────────────────────────────────────────────┐
@@ -89,8 +89,8 @@ to reason about and easy to compare fairly against kernel TCP.
    fragment to `link`.
 4. `link` resolves destination MAC (cache hit in the common case), acquires a
    buffer from `alloc`'s pool, builds the complete Ethernet frame in place, and
-   writes it to the bound BPF descriptor.
-5. `instrument` brackets the BPF `write()` with `CLOCK_MONOTONIC` timestamps.
+   writes it through the Phase-02-selected Darwin TX descriptor.
+5. `instrument` brackets the selected TX syscall with `CLOCK_MONOTONIC` timestamps.
    This measures userspace hand-off plus syscall overhead, not NIC transmission.
 
 ### RX path (wire → application)
@@ -118,7 +118,7 @@ to reason about and easy to compare fairly against kernel TCP.
 
 - **RX thread**: owns the BPF/`kqueue` receive loop and everything up through
   reassembly.
-- **TX thread**: owns retransmission-queue draining and BPF writes. Separate from
+- **TX thread**: owns retransmission-queue draining and link writes. Separate from
   RX to avoid one direction's syscalls stalling the other.
 - **Timer thread** (or timer wheel driven off a lightweight event loop): drives
   RTO expiry checks and reassembly-timeout sweeps — decoupled from the data-path
@@ -133,7 +133,7 @@ to reason about and easy to compare fairly against kernel TCP.
 
 | Decision | Alternatives considered | Rationale |
 |---|---|---|
-| Darwin BPF over Network Extension/DriverKit | Network Extension packet tunnel, DriverKit | BPF exposes raw Ethernet through stable Darwin interfaces without adding an application extension or custom driver. The shipped path is buffered and copied; it is not claimed to match Linux zero-copy ring fidelity. |
+| Darwin BPF RX plus measured feth TX API over Network Extension/DriverKit | Network Extension packet tunnel, DriverKit | BPF exposes raw Ethernet capture without an application extension or custom driver. Phase 02 measures BPF and `AF_NDRV` TX on the selected kernel before choosing; no third-party historical result is assumed. The shipped path is buffered and copied. |
 | Custom transport vs. reusing an existing protocol (QUIC, SCTP) | QUIC, SCTP, raw UDP + manual reliability | The point of the project is the transport internals (SACK/RTO/AIMD) being hand-built and measurable — reusing an existing implementation would remove the thing being demonstrated |
 | Pool allocator vs. general-purpose allocator with tuning | `tcmalloc`/`jemalloc` tuning, arena allocators | Hot-path allocation-free is a hard, verifiable claim (zero `malloc` calls) that a tuned general allocator cannot give as cleanly. Instruments counters or labeled wall-clock/throughput proxies evaluate its cost without inventing unavailable HITM data. |
 | Explicit RTO/Karn/AIMD per RFC 6298 rather than a simplified timer | Fixed timeout, no Karn's exclusion | A fixed timeout invalidates any latency-under-loss comparison against real TCP, since real TCP doesn't use one; Karn's exclusion specifically matters because the benchmark scenario *is* a loss scenario |
@@ -166,7 +166,24 @@ accepting lower observability and packet-I/O fidelity where Darwin exposes less.
 | `tc netem` | `dnctl` pipes attached through `pfctl` dummynet rules | No `ipfw`; only measured pipe behavior may be claimed |
 | `perf c2c` HITM data | Instruments Counters where relevant events exist | No direct equivalent; proxy fallback cannot support cache-miss claims |
 | `taskset`, `isolcpus`, performance governor | No replacement | Apple Silicon scheduling/frequency cannot be pinned equivalently |
-| veth pair | Two physical Macs over real Ethernet | vmnet-backed interfaces are CI-only, never benchmark evidence |
+| veth pair | Paired `feth0`/`feth1` interfaces, available since macOS 10.13 | Real Ethernet framing (`DLT_EN10MB`) on one Mac; no physical switch or propagation behavior |
+
+Phase 02 owns an explicit runtime spike because public Apple documentation does not
+promise which injection API reliably feeds a paired feth interface across every
+macOS release. It creates the pair, verifies BPF RX reports `DLT_EN10MB`, attempts a
+complete-frame BPF write, attempts an `AF_NDRV` send, and records which frame BPF RX
+actually observes. Historical third-party findings are context only. The production
+TX path follows the committed observation from the current OS build.
+
+**Observed selection (2026-07-17 UTC):** on macOS 26.5.1 build 25F80, XNU
+25.5.0, and SDK 26.2, BPF RX reported `DLT_EN10MB`. A 60-byte complete frame
+written through BPF on `feth0` was captured on `feth1`. A connected `AF_NDRV`
+socket also accepted a 60-byte send, but BPF RX captured no matching frame before
+the bounded timeout. Therefore this build selects BPF for both RX and TX. This is
+not generalized to other macOS builds; rerun the spike after an OS/SDK change.
+Sanitized raw evidence lives in
+`bench/evidence/phase02/feth_io_spike_20260717T170204Z.json`; packet captures remain
+uncommitted because project policy excludes link-layer addresses from committed logs.
 
 Darwin's public BPF header currently exposes buffered BPF controls but not
 `BIOCSETZBUF`, `BIOCROTZBUF`, or `BIOCGETZMAX`. A separate post-Phase-03 spike may
@@ -174,20 +191,37 @@ probe the selected SDK and kernel. The main path stays buffered unless a support
 measured implementation earns promotion in a later numbered phase; FreeBSD ioctl
 values are never copied into Darwin code.
 
+### 7.2 Canonical topology and result ownership
+
+The canonical development, CI integration, correctness, and Phase 22–25 benchmark
+topology is a single Mac with `feth0` peered to `feth1`. Sender and receiver are
+separate processes bound to opposite sides. This exercises the complete Ethernet
+header path; `lo0` is forbidden for link integration because its
+`DLT_NULL`/`DLT_LOOP` framing would bypass that path. `dnctl`/PF rules attach to the
+two feth interfaces exactly as they would to physical interfaces.
+
+`bench/report.md` primary numbers come only from feth runs. A later two-Mac Wi-Fi or
+ad hoc run is optional and appears only under "cross-host confirmation." Its samples
+stay separate because Wi-Fi ARQ changes loss and latency behavior. Meaningful
+disagreement must be reported; controlled feth results remain primary rather than
+choosing whichever topology looks better. feth does not model a real switch or real
+propagation delay, so cross-host confirmation remains useful but never blocking.
+
 ## 8. External interfaces
 
-- **Kernel/link**: Darwin BPF device API, `BIOCSBLEN`, `BIOCSETIF`,
+- **Kernel/link**: Darwin BPF RX API, `BIOCSBLEN`, `BIOCSETIF`,
   `BIOCSHDRCMPLT`, `BIOCPROMISC`, `BIOCSSEESENT(0)`, `BIOCIMMEDIATE`, and
-  `kqueue`. No interaction with the kernel's own IP/TCP stack for custom frames.
+  `kqueue`, plus only the feth TX API selected by the Phase-02 runtime spike. No
+  interaction with the kernel's own IP/TCP stack for custom frames.
 - **Timestamping**: BPF capture headers on custom RX, `CLOCK_MONOTONIC` around
   custom TX writes, and `SO_TIMESTAMP_MONOTONIC`/`recvmsg()` control messages for
   kernel-TCP RX. These sources are recorded separately, never presented as equal.
 - **Test harness**: dedicated `dnctl` pipes and `pfctl` dummynet rules applied
-  symmetrically on two physical Macs, with previous state restored after each run.
+  symmetrically to `feth0`/`feth1`, with previous state restored after each run.
 - **Profiling**: Instruments Counters where supported; otherwise committed
   wall-clock/throughput proxy data labeled as such.
-- **CI topology**: unit tests need no privilege. A `vmnet.framework`-backed
-  interface may exercise link integration in CI, but cannot produce benchmark data.
+- **CI topology**: unit tests need no privilege. Privileged integration jobs create
+  a temporary feth pair; no VM or `vmnet.framework` stand-in is required.
 
 ## 9. Risks & mitigations
 
@@ -196,7 +230,8 @@ values are never copied into Darwin code.
 | Benchmark numbers get written before being measured | `AGENTS.md` hard rule: no claim without a committed `bench/` log backing it |
 | ARP-miss stalls masquerade as transport-layer latency | Phase 06 pending-queue design so ARP resolution never silently drops/delays a segment |
 | IP-layer bugs (overlap handling) get misattributed to the transport's SACK logic | Phase 10 fuzz test isolates reassembly correctness before transport work begins |
-| Unfair baseline comparison (different OS/NIC/dummynet parameters per path) | Phase 23 records identical PF/dummynet settings, Ethernet path, payload, duration, and interleaved trial order; lack of core pinning remains explicit |
+| Unfair baseline comparison (different topology/dummynet parameters per path) | Phase 23 records identical feth pair, PF/dummynet settings, payload, duration, and interleaved trial order; lack of core pinning remains explicit |
+| feth injection behavior changes across macOS releases | Phase 02 re-runs BPF-vs-`AF_NDRV` TX spike and commits observed delivery before selecting an API |
 | Lock-free allocator/queue introduces subtle races | TSan-clean requirement in Phase 12 exit criteria before proceeding |
 
 See `LLD.md` for per-module data structures, wire formats, and algorithms.
