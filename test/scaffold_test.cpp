@@ -6,14 +6,18 @@
 
 namespace {
 
-void discard_frame(void*, std::span<const std::byte>) noexcept {}
+void discard_frame(
+    void*,
+    std::span<const std::byte>,
+    const vectornet::link::CaptureMetadata&) noexcept {}
 
 }  // namespace
 
 int main() {
     static_assert(std::is_nothrow_invocable_v<vectornet::link::FrameCallback,
                                                void*,
-                                               std::span<const std::byte>>);
+                                               std::span<const std::byte>,
+                                               const vectornet::link::CaptureMetadata&>);
 
     vectornet::link::LinkConfig config{
         .interface_name = "",

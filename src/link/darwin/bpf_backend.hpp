@@ -31,10 +31,20 @@ public:
 
     [[nodiscard]] InterfaceInfo interface_info() const noexcept;
 
+    [[nodiscard]] BpfStatistics bpf_statistics(std::error_code& error) const noexcept;
+
 private:
-    BpfBackend(int fd, InterfaceInfo info) noexcept;
+    BpfBackend(
+        int fd,
+        int kqueue_fd,
+        std::unique_ptr<std::byte[]> read_buffer,
+        std::size_t read_buffer_size,
+        InterfaceInfo info) noexcept;
 
     int fd_{-1};
+    int kqueue_fd_{-1};
+    std::unique_ptr<std::byte[]> read_buffer_;
+    std::size_t read_buffer_size_{0};
     InterfaceInfo info_{};
 };
 

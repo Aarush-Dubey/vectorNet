@@ -58,6 +58,17 @@ target_compile_options(vectornet_ndrv_probe PRIVATE
     -Wsign-conversion
 )
 
+add_executable(vectornet_batch_probe tools/link_batch_probe.cpp)
+target_compile_features(vectornet_batch_probe PRIVATE cxx_std_20)
+target_link_libraries(vectornet_batch_probe PRIVATE vectornet::link)
+target_compile_options(vectornet_batch_probe PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
 if(BUILD_TESTING)
     add_executable(vectornet_scaffold_test test/scaffold_test.cpp)
     target_compile_features(vectornet_scaffold_test PRIVATE cxx_std_20)

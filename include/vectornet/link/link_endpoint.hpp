@@ -22,7 +22,21 @@ struct InterfaceInfo {
     std::size_t bpf_buffer_bytes{0};
 };
 
-using FrameCallback = void (*)(void* context, std::span<const std::byte> frame) noexcept;
+struct CaptureMetadata {
+    std::uint64_t capture_timestamp_ns{0};
+    std::uint32_t captured_length{0};
+    std::uint32_t wire_length{0};
+};
+
+struct BpfStatistics {
+    std::uint32_t received{0};
+    std::uint32_t dropped{0};
+};
+
+using FrameCallback = void (*)(
+    void* context,
+    std::span<const std::byte> frame,
+    const CaptureMetadata& metadata) noexcept;
 
 class LinkEndpoint final {
 public:
@@ -43,6 +57,8 @@ public:
     [[nodiscard]] std::error_code send_frame(std::span<const std::byte> frame) noexcept;
 
     [[nodiscard]] InterfaceInfo interface_info() const noexcept;
+
+    [[nodiscard]] BpfStatistics bpf_statistics(std::error_code& error) const noexcept;
 
 private:
     struct Impl;

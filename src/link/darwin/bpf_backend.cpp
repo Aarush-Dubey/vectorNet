@@ -5,6 +5,7 @@
 #include <net/if_dl.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/event.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -14,6 +15,7 @@
 #include <cstring>
 #include <ifaddrs.h>
 #include <limits>
+#include <memory>
 #include <string_view>
 
 namespace vectornet::link::darwin {
@@ -158,10 +160,22 @@ private:
 
 }  // namespace
 
-BpfBackend::BpfBackend(int fd, InterfaceInfo info) noexcept
-    : fd_(fd), info_(info) {}
+BpfBackend::BpfBackend(
+    int fd,
+    int kqueue_fd,
+    std::unique_ptr<std::byte[]> read_buffer,
+    std::size_t read_buffer_size,
+    InterfaceInfo info) noexcept
+    : fd_(fd),
+      kqueue_fd_(kqueue_fd),
+      read_buffer_(std::move(read_buffer)),
+      read_buffer_size_(read_buffer_size),
+      info_(info) {}
 
 BpfBackend::~BpfBackend() {
+    if (kqueue_fd_ >= 0) {
+        ::close(kqueue_fd_);
+    }
     if (fd_ >= 0) {
         ::close(fd_);
     }
@@ -201,6 +215,7 @@ std::unique_ptr<BpfBackend> BpfBackend::open(
         error = errno_error();
         return nullptr;
     }
+    auto read_buffer = std::make_unique<std::byte[]>(buffer_bytes);
 
     ifreq request{};
     if (!copy_interface_name(config.interface_name, request, error)) {
@@ -237,14 +252,49 @@ std::unique_ptr<BpfBackend> BpfBackend::open(
         return nullptr;
     }
 
+    unsigned int immediate = 1;
+    if (::ioctl(fd.get(), BIOCIMMEDIATE, &immediate) < 0) {
+        error = errno_error();
+        return nullptr;
+    }
+    if (::ioctl(fd.get(), BIOCFLUSH) < 0) {
+        error = errno_error();
+        return nullptr;
+    }
+
+    ScopedFd event_queue(::kqueue());
+    if (event_queue.get() < 0) {
+        error = errno_error();
+        return nullptr;
+    }
+    struct kevent change{};
+    EV_SET(
+        &change,
+        static_cast<std::uintptr_t>(fd.get()),
+        EVFILT_READ,
+        EV_ADD | EV_ENABLE,
+        0,
+        0,
+        nullptr);
+    if (::kevent(event_queue.get(), &change, 1, nullptr, 0, nullptr) < 0) {
+        error = errno_error();
+        return nullptr;
+    }
+
     InterfaceInfo info{};
     info.bpf_buffer_bytes = buffer_bytes;
     if (!query_interface_info(config.interface_name, info, error)) {
         return nullptr;
     }
 
-    auto backend = std::unique_ptr<BpfBackend>(new BpfBackend(fd.get(), info));
+    auto backend = std::unique_ptr<BpfBackend>(new BpfBackend(
+        fd.get(),
+        event_queue.get(),
+        std::move(read_buffer),
+        buffer_bytes,
+        info));
     static_cast<void>(fd.release());
+    static_cast<void>(event_queue.release());
     error.clear();
     return backend;
 }
@@ -252,9 +302,91 @@ std::unique_ptr<BpfBackend> BpfBackend::open(
 std::error_code BpfBackend::poll_frames(
     FrameCallback callback,
     void* context) noexcept {
-    static_cast<void>(callback);
-    static_cast<void>(context);
-    return std::make_error_code(std::errc::operation_not_supported);
+    if (callback == nullptr) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+
+    struct kevent event{};
+    int ready = 0;
+    do {
+        ready = ::kevent(kqueue_fd_, nullptr, 0, &event, 1, nullptr);
+    } while (ready < 0 && errno == EINTR);
+    if (ready < 0) {
+        return errno_error();
+    }
+    if ((event.flags & EV_ERROR) != 0) {
+        return {static_cast<int>(event.data), std::generic_category()};
+    }
+
+    ssize_t bytes_read = 0;
+    do {
+        bytes_read = ::read(fd_, read_buffer_.get(), read_buffer_size_);
+    } while (bytes_read < 0 && errno == EINTR);
+    if (bytes_read < 0) {
+        return errno_error();
+    }
+    if (bytes_read == 0) {
+        return std::make_error_code(std::errc::io_error);
+    }
+
+    const std::size_t batch_bytes = static_cast<std::size_t>(bytes_read);
+    std::size_t offset = 0;
+    constexpr std::size_t kBpfHeaderFieldsBytes =
+        offsetof(bpf_hdr, bh_hdrlen) + sizeof(bpf_hdr::bh_hdrlen);
+    while (offset < batch_bytes) {
+        if (batch_bytes - offset < kBpfHeaderFieldsBytes) {
+            return std::make_error_code(std::errc::protocol_error);
+        }
+
+        bpf_hdr header{};
+        std::memcpy(&header, read_buffer_.get() + offset, kBpfHeaderFieldsBytes);
+        const std::size_t header_bytes = header.bh_hdrlen;
+        const std::size_t captured_bytes = header.bh_caplen;
+        if (header_bytes < kBpfHeaderFieldsBytes || header_bytes > batch_bytes - offset) {
+            return std::make_error_code(std::errc::protocol_error);
+        }
+        const std::size_t frame_offset = offset + header_bytes;
+        if (captured_bytes > batch_bytes - frame_offset) {
+            return std::make_error_code(std::errc::protocol_error);
+        }
+        if (header.bh_tstamp.tv_sec < 0 || header.bh_tstamp.tv_usec < 0 ||
+            header.bh_tstamp.tv_usec >= 1'000'000) {
+            return std::make_error_code(std::errc::protocol_error);
+        }
+
+        constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
+        constexpr std::uint64_t kNanosecondsPerMicrosecond = 1'000ULL;
+        const auto seconds = static_cast<std::uint64_t>(header.bh_tstamp.tv_sec);
+        if (seconds > std::numeric_limits<std::uint64_t>::max() /
+                          kNanosecondsPerSecond) {
+            return std::make_error_code(std::errc::value_too_large);
+        }
+        const CaptureMetadata metadata{
+            .capture_timestamp_ns =
+                seconds * kNanosecondsPerSecond +
+                static_cast<std::uint64_t>(header.bh_tstamp.tv_usec) *
+                    kNanosecondsPerMicrosecond,
+            .captured_length = header.bh_caplen,
+            .wire_length = header.bh_datalen,
+        };
+        callback(
+            context,
+            std::span<const std::byte>(read_buffer_.get() + frame_offset, captured_bytes),
+            metadata);
+
+        const std::size_t record_bytes = header_bytes + captured_bytes;
+        const std::size_t remaining_bytes = batch_bytes - offset;
+        if (record_bytes == remaining_bytes) {
+            offset = batch_bytes;
+            continue;
+        }
+        const std::size_t aligned_bytes = BPF_WORDALIGN(record_bytes);
+        if (aligned_bytes < record_bytes || aligned_bytes > remaining_bytes) {
+            return std::make_error_code(std::errc::protocol_error);
+        }
+        offset += aligned_bytes;
+    }
+    return {};
 }
 
 std::error_code BpfBackend::send_frame(std::span<const std::byte> frame) noexcept {
@@ -277,6 +409,19 @@ std::error_code BpfBackend::send_frame(std::span<const std::byte> frame) noexcep
 
 InterfaceInfo BpfBackend::interface_info() const noexcept {
     return info_;
+}
+
+BpfStatistics BpfBackend::bpf_statistics(std::error_code& error) const noexcept {
+    bpf_stat statistics{};
+    if (::ioctl(fd_, BIOCGSTATS, &statistics) < 0) {
+        error = errno_error();
+        return {};
+    }
+    error.clear();
+    return {
+        .received = statistics.bs_recv,
+        .dropped = statistics.bs_drop,
+    };
 }
 
 }  // namespace vectornet::link::darwin

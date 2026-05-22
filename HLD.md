@@ -185,11 +185,17 @@ Sanitized raw evidence lives in
 `bench/evidence/phase02/feth_io_spike_20260717T170204Z.json`; packet captures remain
 uncommitted because project policy excludes link-layer addresses from committed logs.
 
+Default SIP on the selected macOS build leaves `dtruss` with zero syscall rows for
+both Apple and third-party binaries. Phase 03 commits that unsupported-tool evidence
+and uses Instruments System Trace through `xctrace` for the required syscall/copy
+timeline. This is a disclosed tooling substitution; SIP remains enabled.
+
 Darwin's public BPF header currently exposes buffered BPF controls but not
-`BIOCSETZBUF`, `BIOCROTZBUF`, or `BIOCGETZMAX`. A separate post-Phase-03 spike may
-probe the selected SDK and kernel. The main path stays buffered unless a supported,
-measured implementation earns promotion in a later numbered phase; FreeBSD ioctl
-values are never copied into Darwin code.
+`BIOCSETZBUF`, `BIOCROTZBUF`, or `BIOCGETZMAX`. The post-Phase-03 compile probe on
+branch `spike/darwin-bpf-zbuf` confirmed all three absent from selected macOS 26.5
+SDK headers, so zbuf promotion is rejected. Main path stays buffered unless a future
+supported, measured implementation earns promotion in a later numbered phase;
+FreeBSD ioctl values are never copied into Darwin code.
 
 ### 7.2 Canonical topology and result ownership
 

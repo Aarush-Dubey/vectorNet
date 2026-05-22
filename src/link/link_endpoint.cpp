@@ -60,4 +60,12 @@ InterfaceInfo LinkEndpoint::interface_info() const noexcept {
     return impl_->backend->interface_info();
 }
 
+BpfStatistics LinkEndpoint::bpf_statistics(std::error_code& error) const noexcept {
+    if (!impl_ || !impl_->backend) {
+        error = std::make_error_code(std::errc::bad_file_descriptor);
+        return {};
+    }
+    return impl_->backend->bpf_statistics(error);
+}
+
 }  // namespace vectornet::link

@@ -21,6 +21,15 @@ ignored `.vectornet-artifacts/`; summaries contain no MAC address. A later optio
 cross-host confirmation belongs to Phase 25 and must remain separate from canonical
 feth results.
 
+`phase03_feth_batch.sh` exercises production `kqueue`/BPF batch reads, checks
+`BIOCGSTATS`, records expected `dtruss`-under-SIP evidence, then captures the
+read/`kevent`/write timeline with Instruments System Trace. It commits only the
+sanitized CSV; raw trace bundles stay ignored because they contain UUID metadata:
+
+```sh
+scripts/phase03_feth_batch.sh
+```
+
 Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
 `sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
 or interruption. Unit tests must never call these scripts.

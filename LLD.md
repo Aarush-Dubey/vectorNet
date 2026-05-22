@@ -84,11 +84,11 @@ feth interface and calls one `send()` per complete frame. Both remain copied pat
 neither is equivalent to `PACKET_MMAP`/`TPACKET_V3` zero-copy semantics.
 
 The selected Darwin SDK and public XNU header do not expose `BIOCSETZBUF`,
-`BIOCROTZBUF`, or `BIOCGETZMAX`. A separate branch after Phase 03 may compile-probe
-those names and, only when the selected SDK and kernel support them, measure a
-runtime path. Never define FreeBSD ioctl values locally. The numbered main path
-remains buffered until a later phase contains both support evidence and a committed
-measurement justifying promotion.
+`BIOCROTZBUF`, or `BIOCGETZMAX`. The post-Phase-03 compile probe on branch
+`spike/darwin-bpf-zbuf` confirmed all three absent from macOS 26.5 SDK headers and
+rejected zbuf promotion; no runtime probe was attempted. Never define FreeBSD ioctl
+values locally. The numbered main path remains buffered until a later phase contains
+both support evidence and a committed measurement justifying promotion.
 
 ### 1.2 ARP cache
 
