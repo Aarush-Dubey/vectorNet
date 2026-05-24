@@ -190,6 +190,12 @@ both Apple and third-party binaries. Phase 03 commits that unsupported-tool evid
 and uses Instruments System Trace through `xctrace` for the required syscall/copy
 timeline. This is a disclosed tooling substitution; SIP remains enabled.
 
+On macOS 26.5.1 build 25F80, writing a 10-byte raw frame through BPF into feth
+reproducibly triggered a kernel mbuf-validity panic (`len -4`, `rcvif feth1`). Raw
+TX therefore rejects frames shorter than the 14-byte Ethernet header before
+`write()`. Short/VLAN rejection tests stay in userspace; feth receives valid framing
+only. Raw panic reports remain local because they contain machine UUID metadata.
+
 Darwin's public BPF header currently exposes buffered BPF controls but not
 `BIOCSETZBUF`, `BIOCROTZBUF`, or `BIOCGETZMAX`. The post-Phase-03 compile probe on
 branch `spike/darwin-bpf-zbuf` confirmed all three absent from selected macOS 26.5

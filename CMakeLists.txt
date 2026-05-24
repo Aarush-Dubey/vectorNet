@@ -17,6 +17,7 @@ endif()
 include(CTest)
 
 add_library(vectornet_link STATIC
+    src/link/ethernet.cpp
     src/link/link_endpoint.cpp
     src/link/darwin/bpf_backend.cpp
 )
@@ -69,6 +70,17 @@ target_compile_options(vectornet_batch_probe PRIVATE
     -Wsign-conversion
 )
 
+add_executable(vectornet_ethernet_probe tools/ethernet_probe.cpp)
+target_compile_features(vectornet_ethernet_probe PRIVATE cxx_std_20)
+target_link_libraries(vectornet_ethernet_probe PRIVATE vectornet::link)
+target_compile_options(vectornet_ethernet_probe PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
 if(BUILD_TESTING)
     add_executable(vectornet_scaffold_test test/scaffold_test.cpp)
     target_compile_features(vectornet_scaffold_test PRIVATE cxx_std_20)
@@ -81,4 +93,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.scaffold COMMAND vectornet_scaffold_test)
+
+    add_executable(vectornet_ethernet_test test/ethernet_test.cpp)
+    target_compile_features(vectornet_ethernet_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_ethernet_test PRIVATE vectornet::link)
+    target_compile_options(vectornet_ethernet_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.ethernet COMMAND vectornet_ethernet_test)
 endif()

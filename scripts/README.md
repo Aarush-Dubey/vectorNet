@@ -30,6 +30,15 @@ sanitized CSV; raw trace bundles stay ignored because they contain UUID metadata
 scripts/phase03_feth_batch.sh
 ```
 
+`phase04_feth_ethernet.sh` runs two filtered Ethernet endpoints across feth. It
+verifies short and VLAN frames are rejected in userspace before BPF TX, then runs a
+valid IPv4-protocol-253 echo. Malformed frames never enter feth. Script records both
+process logs and keeps its address-bearing packet capture ignored:
+
+```sh
+scripts/phase04_feth_ethernet.sh
+```
+
 Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
 `sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
 or interruption. Unit tests must never call these scripts.

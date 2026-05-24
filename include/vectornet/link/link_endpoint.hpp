@@ -10,10 +10,16 @@
 
 namespace vectornet::link {
 
+enum class CaptureFilter : std::uint8_t {
+    none,
+    stack_arp_ipv4_253,
+};
+
 struct LinkConfig {
     std::string interface_name;
     std::size_t requested_buffer_bytes{0};
     bool promiscuous{false};
+    CaptureFilter capture_filter{CaptureFilter::none};
 };
 
 struct InterfaceInfo {

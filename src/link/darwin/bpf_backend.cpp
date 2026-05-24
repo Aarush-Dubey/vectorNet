@@ -1,4 +1,5 @@
 #include "bpf_backend.hpp"
+#include "vectornet/link/ethernet.hpp"
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -158,6 +159,56 @@ private:
     return true;
 }
 
+[[nodiscard]] bool install_capture_filter(
+    int fd,
+    CaptureFilter selection,
+    const MacAddress& local_mac,
+    std::error_code& error) noexcept {
+    if (selection == CaptureFilter::none) {
+        return true;
+    }
+    if (selection != CaptureFilter::stack_arp_ipv4_253) {
+        error = std::make_error_code(std::errc::invalid_argument);
+        return false;
+    }
+
+    const std::uint32_t local_prefix =
+        static_cast<std::uint32_t>(local_mac[0]) << 24U |
+        static_cast<std::uint32_t>(local_mac[1]) << 16U |
+        static_cast<std::uint32_t>(local_mac[2]) << 8U |
+        static_cast<std::uint32_t>(local_mac[3]);
+    const std::uint32_t local_suffix =
+        static_cast<std::uint32_t>(local_mac[4]) << 8U |
+        static_cast<std::uint32_t>(local_mac[5]);
+
+    std::array<bpf_insn, 14> instructions{{
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, local_prefix, 0, 2),
+        BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 4),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, local_suffix, 3, 9),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xFFFFFFFFU, 0, 8),
+        BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 4),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xFFFFU, 0, 6),
+        BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kEtherTypeArp, 3, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kEtherTypeIpv4, 0, 3),
+        BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 253, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, std::numeric_limits<std::uint32_t>::max()),
+        BPF_STMT(BPF_RET | BPF_K, 0),
+    }};
+    bpf_program program{
+        .bf_len = static_cast<unsigned int>(instructions.size()),
+        .bf_insns = instructions.data(),
+    };
+    if (::ioctl(fd, BIOCSETF, &program) < 0) {
+        error = errno_error();
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
 }  // namespace
 
 BpfBackend::BpfBackend(
@@ -252,6 +303,13 @@ std::unique_ptr<BpfBackend> BpfBackend::open(
         return nullptr;
     }
 
+    InterfaceInfo info{};
+    info.bpf_buffer_bytes = buffer_bytes;
+    if (!query_interface_info(config.interface_name, info, error) ||
+        !install_capture_filter(fd.get(), config.capture_filter, info.mac, error)) {
+        return nullptr;
+    }
+
     unsigned int immediate = 1;
     if (::ioctl(fd.get(), BIOCIMMEDIATE, &immediate) < 0) {
         error = errno_error();
@@ -278,12 +336,6 @@ std::unique_ptr<BpfBackend> BpfBackend::open(
         nullptr);
     if (::kevent(event_queue.get(), &change, 1, nullptr, 0, nullptr) < 0) {
         error = errno_error();
-        return nullptr;
-    }
-
-    InterfaceInfo info{};
-    info.bpf_buffer_bytes = buffer_bytes;
-    if (!query_interface_info(config.interface_name, info, error)) {
         return nullptr;
     }
 
@@ -390,8 +442,13 @@ std::error_code BpfBackend::poll_frames(
 }
 
 std::error_code BpfBackend::send_frame(std::span<const std::byte> frame) noexcept {
-    if (frame.empty()) {
+    if (frame.size() < kEthernetHeaderBytes) {
         return std::make_error_code(std::errc::invalid_argument);
+    }
+    const std::size_t maximum_frame_bytes =
+        static_cast<std::size_t>(info_.mtu) + kEthernetHeaderBytes;
+    if (frame.size() > maximum_frame_bytes) {
+        return std::make_error_code(std::errc::message_size);
     }
     if (frame.size() > static_cast<std::size_t>(std::numeric_limits<ssize_t>::max())) {
         return std::make_error_code(std::errc::value_too_large);

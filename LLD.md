@@ -83,6 +83,11 @@ When `TxApi::Bpf` is selected, TX calls one BPF `write()` per complete frame. Wh
 feth interface and calls one `send()` per complete frame. Both remain copied paths;
 neither is equivalent to `PACKET_MMAP`/`TPACKET_V3` zero-copy semantics.
 
+Before any Darwin TX syscall, reject raw frames shorter than 14 bytes and frames
+larger than `MTU + 14`. Unsupported VLAN construction is rejected in the Ethernet
+wrapper. This boundary is mandatory: selected macOS 26.5.1 feth panics in kernel
+mbuf validation when given a 10-byte BPF-written frame.
+
 The selected Darwin SDK and public XNU header do not expose `BIOCSETZBUF`,
 `BIOCROTZBUF`, or `BIOCGETZMAX`. The post-Phase-03 compile probe on branch
 `spike/darwin-bpf-zbuf` confirmed all three absent from macOS 26.5 SDK headers and
