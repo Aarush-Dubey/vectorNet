@@ -106,10 +106,10 @@ struct ArpEntry {
 };
 
 struct ArpCache {
-    // Open-addressed hash map, ip -> ArpEntry. Sized for the expected peer count
-    // (small — this is a single-broadcast-domain stack, not a router table).
-    std::unordered_map<uint32_t, ArpEntry> entries;
-    std::unordered_map<uint32_t, std::vector<PooledBuffer>> pending; // Phase 06
+    // Fixed-capacity storage allocated during initialization. Phase 05 uses a
+    // bounded linear scan because expected peer count is small.
+    std::vector<ArpEntry> entries;
+    uint64_t ttl_ns; // default 60 seconds
 };
 ```
 
@@ -117,20 +117,16 @@ struct ArpCache {
 ```
 resolve(ip):
     if entries[ip] exists and not expired: return entries[ip].mac
-    if no in-flight request for ip:
-        send ARP request for ip
-        start pending[ip] = []
-    return nullopt   // caller enqueues the frame into pending[ip]
+    send ARP request for ip
+    return nullopt   // Phase 06 adds in-flight suppression and pending frames
 
 on_arp_reply(ip, mac):
     entries[ip] = { ip, mac, now + TTL, true }
-    for frame in pending[ip]: link.send_frame(frame, mac)
-    pending.erase(ip)
 ```
 
-**Refresh**: a timer sweep re-resolves any entry within `REFRESH_MARGIN` (e.g. 5s)
-of expiry *before* it expires, so a resolve-on-miss stall never lands on the
-critical path of an active connection.
+Insertion updates an existing address, reuses an empty/expired slot, or returns
+`cache_full`; it never grows storage. Phase 06 adds pending-frame storage, request
+suppression, and refresh within the fixed five-second margin.
 
 ---
 

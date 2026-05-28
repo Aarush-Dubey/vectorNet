@@ -17,6 +17,7 @@ endif()
 include(CTest)
 
 add_library(vectornet_link STATIC
+    src/link/arp.cpp
     src/link/ethernet.cpp
     src/link/link_endpoint.cpp
     src/link/darwin/bpf_backend.cpp
@@ -105,4 +106,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.ethernet COMMAND vectornet_ethernet_test)
+
+    add_executable(vectornet_arp_test test/arp_test.cpp)
+    target_compile_features(vectornet_arp_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_arp_test PRIVATE vectornet::link)
+    target_compile_options(vectornet_arp_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.arp COMMAND vectornet_arp_test)
 endif()
