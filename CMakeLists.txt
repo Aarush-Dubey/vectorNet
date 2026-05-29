@@ -118,4 +118,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.arp COMMAND vectornet_arp_test)
+
+    add_executable(vectornet_arp_pending_test test/arp_pending_test.cpp)
+    target_compile_features(vectornet_arp_pending_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_arp_pending_test PRIVATE vectornet::link)
+    target_compile_options(vectornet_arp_pending_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.arp_pending COMMAND vectornet_arp_pending_test)
 endif()

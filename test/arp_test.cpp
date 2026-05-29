@@ -94,10 +94,27 @@ std::error_code transmit_to_mailbox(
     constexpr std::uint64_t ttl = 100;
     Mailbox a_to_b{};
     Mailbox b_to_a{};
+    const vectornet::link::ArpResolverConfig config{
+        .cache_capacity = 4,
+        .pending_capacity = 4,
+        .ttl_ns = ttl,
+    };
     vectornet::link::ArpResolver a(
-        ip_a, mac_a, 4, &transmit_to_mailbox, &a_to_b, ttl);
+        ip_a,
+        mac_a,
+        config,
+        vectornet::link::ArpResolverCallbacks{
+            .arp_transmit = &transmit_to_mailbox,
+            .arp_context = &a_to_b,
+        });
     vectornet::link::ArpResolver b(
-        ip_b, mac_b, 4, &transmit_to_mailbox, &b_to_a, ttl);
+        ip_b,
+        mac_b,
+        config,
+        vectornet::link::ArpResolverCallbacks{
+            .arp_transmit = &transmit_to_mailbox,
+            .arp_context = &b_to_a,
+        });
 
     const auto first = a.resolve(ip_b, 10);
     if (!expect(first.status == ArpStatus::pending && !first.hardware.has_value(),
@@ -164,7 +181,17 @@ std::error_code transmit_to_mailbox(
 
     Mailbox replies{};
     vectornet::link::ArpResolver zero_capacity(
-        2, mac, 0, &transmit_to_mailbox, &replies, 10);
+        2,
+        mac,
+        vectornet::link::ArpResolverConfig{
+            .cache_capacity = 0,
+            .pending_capacity = 1,
+            .ttl_ns = 10,
+        },
+        vectornet::link::ArpResolverCallbacks{
+            .arp_transmit = &transmit_to_mailbox,
+            .arp_context = &replies,
+        });
     const ArpMessage request{
         .operation = ArpOperation::request,
         .sender_hardware = MacAddress{0x02, 0, 0, 0, 0, 2},

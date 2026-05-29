@@ -146,6 +146,7 @@ bool ArpCache::insert(
         .hardware = hardware,
         .expires_at_ns = expiration_from(now_ns),
         .valid = true,
+        .refresh_requested = false,
     };
     return true;
 }
@@ -178,15 +179,15 @@ std::uint64_t ArpCache::expiration_from(std::uint64_t now_ns) const noexcept {
 ArpResolver::ArpResolver(
     Ipv4Address local_protocol,
     const MacAddress& local_hardware,
-    std::size_t cache_capacity,
-    ArpTransmitCallback transmit,
-    void* transmit_context,
-    std::uint64_t ttl_ns)
+    const ArpResolverConfig& config,
+    const ArpResolverCallbacks& callbacks)
     : local_protocol_(local_protocol),
       local_hardware_(local_hardware),
-      cache_(cache_capacity, ttl_ns),
-      transmit_(transmit),
-      transmit_context_(transmit_context) {}
+      cache_(config.cache_capacity, config.ttl_ns),
+      config_(config),
+      callbacks_(callbacks),
+      pending_(config.pending_capacity),
+      resolutions_(std::max(config.cache_capacity, config.pending_capacity)) {}
 
 ArpResolveResult ArpResolver::resolve(
     Ipv4Address target,
@@ -195,17 +196,10 @@ ArpResolveResult ArpResolver::resolve(
         return {.hardware = hardware, .status = ArpStatus::ok};
     }
 
-    const ArpMessage request{
-        .operation = ArpOperation::request,
-        .sender_hardware = local_hardware_,
-        .sender_protocol = local_protocol_,
-        .target_hardware = {},
-        .target_protocol = target,
-    };
-    const ArpStatus status = transmit_message(kEthernetBroadcast, request);
+    const ArpStatus status = ensure_resolution(target, now_ns);
     return {
         .hardware = std::nullopt,
-        .status = status == ArpStatus::ok ? ArpStatus::pending : status,
+        .status = status,
     };
 }
 
@@ -217,25 +211,132 @@ ArpStatus ArpResolver::on_arp_payload(
     if (parse_status != ArpStatus::ok) {
         return parse_status;
     }
-    const bool cached =
-        cache_.insert(message.sender_protocol, message.sender_hardware, now_ns);
-    if (message.operation != ArpOperation::request ||
-        message.target_protocol != local_protocol_) {
-        return cached ? ArpStatus::ok : ArpStatus::cache_full;
-    }
+    const bool cached = cache_.insert(
+        message.sender_protocol, message.sender_hardware, now_ns);
+    clear_resolution(message.sender_protocol);
+    const ArpStatus flush_status =
+        flush_pending(message.sender_protocol, message.sender_hardware);
 
-    const ArpMessage reply{
-        .operation = ArpOperation::reply,
-        .sender_hardware = local_hardware_,
-        .sender_protocol = local_protocol_,
-        .target_hardware = message.sender_hardware,
-        .target_protocol = message.sender_protocol,
-    };
-    const ArpStatus transmit_status = transmit_message(message.sender_hardware, reply);
-    if (transmit_status != ArpStatus::ok) {
-        return transmit_status;
+    ArpStatus reply_status = ArpStatus::ok;
+    if (message.operation == ArpOperation::request &&
+        message.target_protocol == local_protocol_) {
+        const ArpMessage reply{
+            .operation = ArpOperation::reply,
+            .sender_hardware = local_hardware_,
+            .sender_protocol = local_protocol_,
+            .target_hardware = message.sender_hardware,
+            .target_protocol = message.sender_protocol,
+        };
+        reply_status = transmit_message(message.sender_hardware, reply);
+    }
+    if (flush_status != ArpStatus::ok) {
+        return flush_status;
+    }
+    if (reply_status != ArpStatus::ok) {
+        return reply_status;
     }
     return cached ? ArpStatus::ok : ArpStatus::cache_full;
+}
+
+ArpStatus ArpResolver::queue_frame(
+    Ipv4Address target,
+    std::uint16_t ether_type,
+    std::span<const std::byte> payload,
+    std::uint64_t now_ns) noexcept {
+    if (payload.size() > kArpMaximumPendingPayloadBytes) {
+        return ArpStatus::payload_too_large;
+    }
+    if (callbacks_.frame_transmit == nullptr) {
+        return ArpStatus::send_failed;
+    }
+    if (auto hardware = cache_.lookup(target, now_ns); hardware.has_value()) {
+        const std::error_code error = callbacks_.frame_transmit(
+            callbacks_.frame_context, *hardware, ether_type, payload);
+        return error ? ArpStatus::send_failed : ArpStatus::ok;
+    }
+
+    PendingFrame* slot = nullptr;
+    for (auto& pending : pending_) {
+        if (!pending.active) {
+            slot = &pending;
+            break;
+        }
+    }
+    if (slot == nullptr) {
+        return ArpStatus::queue_full;
+    }
+    slot->target = target;
+    slot->ether_type = ether_type;
+    slot->payload_bytes = payload.size();
+    slot->deadline_ns = deadline_from(now_ns, config_.pending_deadline_ns);
+    slot->active = true;
+    std::copy(payload.begin(), payload.end(), slot->payload.begin());
+    const ArpStatus resolution_status = ensure_resolution(target, now_ns);
+    if (resolution_status != ArpStatus::pending) {
+        slot->active = false;
+        return resolution_status;
+    }
+    return ArpStatus::queued;
+}
+
+void ArpResolver::tick(std::uint64_t now_ns) noexcept {
+    cache_.expire(now_ns);
+    for (auto& pending : pending_) {
+        if (!pending.active || now_ns < pending.deadline_ns) {
+            continue;
+        }
+        if (callbacks_.failure != nullptr) {
+            callbacks_.failure(
+                callbacks_.failure_context, pending.target, ArpStatus::unreachable);
+        }
+        pending.active = false;
+    }
+
+    for (auto& resolution : resolutions_) {
+        if (!resolution.active) {
+            continue;
+        }
+        if (now_ns >= resolution.deadline_ns) {
+            fail_pending(resolution.target, ArpStatus::unreachable);
+            resolution.active = false;
+            continue;
+        }
+        if (resolution.attempts >= config_.maximum_attempts ||
+            now_ns < resolution.next_retry_ns) {
+            continue;
+        }
+        const ArpStatus status = send_request(resolution.target);
+        if (status != ArpStatus::ok) {
+            fail_pending(resolution.target, status);
+            resolution.active = false;
+            continue;
+        }
+        ++resolution.attempts;
+        resolution.next_retry_ns =
+            deadline_from(now_ns, config_.retry_interval_ns);
+    }
+
+    for (auto& entry : cache_.entries_) {
+        if (!entry.valid || entry.refresh_requested || now_ns >= entry.expires_at_ns ||
+            entry.expires_at_ns - now_ns > config_.refresh_margin_ns) {
+            continue;
+        }
+        if (ensure_resolution(entry.address, now_ns) == ArpStatus::pending) {
+            entry.refresh_requested = true;
+        }
+    }
+}
+
+std::size_t ArpResolver::pending_frames() const noexcept {
+    return static_cast<std::size_t>(std::count_if(
+        pending_.begin(), pending_.end(),
+        [](const PendingFrame& pending) { return pending.active; }));
+}
+
+std::size_t ArpResolver::active_resolutions() const noexcept {
+    return static_cast<std::size_t>(std::count_if(
+        resolutions_.begin(), resolutions_.end(),
+        [](const Resolution& resolution) { return resolution.active; }));
 }
 
 ArpCache& ArpResolver::cache() noexcept {
@@ -249,7 +350,7 @@ const ArpCache& ArpResolver::cache() const noexcept {
 ArpStatus ArpResolver::transmit_message(
     const MacAddress& destination,
     const ArpMessage& message) noexcept {
-    if (transmit_ == nullptr) {
+    if (callbacks_.arp_transmit == nullptr) {
         return ArpStatus::send_failed;
     }
     std::array<std::byte, kArpPayloadBytes> payload{};
@@ -258,11 +359,115 @@ ArpStatus ArpResolver::transmit_message(
     if (build_status != ArpStatus::ok) {
         return build_status;
     }
-    const std::error_code error = transmit_(
-        transmit_context_,
+    const std::error_code error = callbacks_.arp_transmit(
+        callbacks_.arp_context,
         destination,
         std::span<const std::byte>(payload.data(), bytes_written));
     return error ? ArpStatus::send_failed : ArpStatus::ok;
+}
+
+ArpStatus ArpResolver::ensure_resolution(
+    Ipv4Address target,
+    std::uint64_t now_ns) noexcept {
+    if (config_.maximum_attempts == 0) {
+        return ArpStatus::send_failed;
+    }
+    for (const auto& resolution : resolutions_) {
+        if (resolution.active && resolution.target == target) {
+            return ArpStatus::pending;
+        }
+    }
+    Resolution* available = nullptr;
+    for (auto& resolution : resolutions_) {
+        if (!resolution.active) {
+            available = &resolution;
+            break;
+        }
+    }
+    if (available == nullptr) {
+        return ArpStatus::queue_full;
+    }
+    *available = Resolution{
+        .target = target,
+        .next_retry_ns = deadline_from(now_ns, config_.retry_interval_ns),
+        .deadline_ns = deadline_from(now_ns, config_.pending_deadline_ns),
+        .attempts = 1,
+        .active = true,
+    };
+    const ArpStatus status = send_request(target);
+    if (status != ArpStatus::ok) {
+        available->active = false;
+        return status;
+    }
+    return ArpStatus::pending;
+}
+
+ArpStatus ArpResolver::send_request(Ipv4Address target) noexcept {
+    const ArpMessage request{
+        .operation = ArpOperation::request,
+        .sender_hardware = local_hardware_,
+        .sender_protocol = local_protocol_,
+        .target_hardware = {},
+        .target_protocol = target,
+    };
+    return transmit_message(kEthernetBroadcast, request);
+}
+
+ArpStatus ArpResolver::flush_pending(
+    Ipv4Address target,
+    const MacAddress& hardware) noexcept {
+    ArpStatus result = ArpStatus::ok;
+    for (auto& pending : pending_) {
+        if (!pending.active || pending.target != target) {
+            continue;
+        }
+        const std::error_code error = callbacks_.frame_transmit == nullptr
+            ? std::make_error_code(std::errc::operation_not_supported)
+            : callbacks_.frame_transmit(
+                  callbacks_.frame_context,
+                  hardware,
+                  pending.ether_type,
+                  std::span<const std::byte>(
+                      pending.payload.data(), pending.payload_bytes));
+        if (error) {
+            result = ArpStatus::send_failed;
+            if (callbacks_.failure != nullptr) {
+                callbacks_.failure(
+                    callbacks_.failure_context, target, ArpStatus::send_failed);
+            }
+        }
+        pending.active = false;
+    }
+    return result;
+}
+
+void ArpResolver::fail_pending(Ipv4Address target, ArpStatus reason) noexcept {
+    for (auto& pending : pending_) {
+        if (!pending.active || pending.target != target) {
+            continue;
+        }
+        if (callbacks_.failure != nullptr) {
+            callbacks_.failure(callbacks_.failure_context, target, reason);
+        }
+        pending.active = false;
+    }
+}
+
+void ArpResolver::clear_resolution(Ipv4Address target) noexcept {
+    for (auto& resolution : resolutions_) {
+        if (resolution.active && resolution.target == target) {
+            resolution.active = false;
+        }
+    }
+}
+
+std::uint64_t ArpResolver::deadline_from(
+    std::uint64_t now_ns,
+    std::uint64_t interval_ns) const noexcept {
+    if (interval_ns > std::numeric_limits<std::uint64_t>::max() - now_ns) {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    return now_ns + interval_ns;
 }
 
 }  // namespace vectornet::link

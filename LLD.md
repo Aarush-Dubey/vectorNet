@@ -128,6 +128,14 @@ Insertion updates an existing address, reuses an empty/expired slot, or returns
 `cache_full`; it never grows storage. Phase 06 adds pending-frame storage, request
 suppression, and refresh within the fixed five-second margin.
 
+Phase 06 preallocates bounded pending-frame and resolution-state arrays. Each pending
+slot holds at most 2,048 bytes. First miss sends one request; later frames for that
+target share the in-flight state. Retry interval is 250ms, maximum attempts is three,
+and pending deadline is one second. Reply or gratuitous ARP learning flushes every
+matching frame in insertion order. Deadline expiry invokes the explicit unreachable
+callback and releases all matching slots. Cache entries trigger at most one refresh
+sequence when they enter the five-second pre-expiry margin.
+
 ---
 
 ## 2. Network layer (`src/net`)
