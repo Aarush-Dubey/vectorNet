@@ -39,6 +39,23 @@ target_compile_options(vectornet_link PRIVATE
     -Wsign-conversion
 )
 
+add_library(vectornet_net STATIC
+    src/net/ipv4.cpp
+)
+add_library(vectornet::net ALIAS vectornet_net)
+target_compile_features(vectornet_net PUBLIC cxx_std_20)
+target_include_directories(vectornet_net
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_options(vectornet_net PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
 add_executable(vectornet_link_probe tools/link_probe.cpp)
 target_compile_features(vectornet_link_probe PRIVATE cxx_std_20)
 target_link_libraries(vectornet_link_probe PRIVATE vectornet::link)
@@ -130,4 +147,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.arp_pending COMMAND vectornet_arp_pending_test)
+
+    add_executable(vectornet_ipv4_test test/ipv4_test.cpp)
+    target_compile_features(vectornet_ipv4_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_ipv4_test PRIVATE vectornet::net)
+    target_compile_options(vectornet_ipv4_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.ipv4 COMMAND vectornet_ipv4_test)
 endif()

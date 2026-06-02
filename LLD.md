@@ -142,13 +142,13 @@ sequence when they enter the five-second pre-expiry margin.
 
 ### 2.1 IPv4 header
 
-Standard RFC 791 layout (20-byte base header, no options support needed for this
-project's scope):
+Standard RFC 791 fields (20-byte base header, no options). C++ representation stays
+in host order; parser/serializer perform explicit network-byte-order conversion:
 
 ```cpp
 #pragma pack(push, 1)
 struct Ipv4Header {
-    uint8_t  version_ihl;      // version:4, IHL:4
+    uint8_t  version_ihl;      // wire only: version 4, IHL 5
     uint8_t  dscp_ecn;
     uint16_t total_length;
     uint16_t identification;
@@ -162,6 +162,11 @@ struct Ipv4Header {
 #pragma pack(pop)
 static_assert(sizeof(Ipv4Header) == 20);
 ```
+
+Implementation does not cast packet memory to this struct. It requires version 4 and
+IHL 5, verifies total length and header checksum, and trims Ethernet padding using
+the IPv4 total-length field. TX defaults are TTL 64 and experimental protocol 253.
+The checksum test includes the known header vector whose checksum is `0xb861`.
 
 Flags: bit 0 reserved, bit 1 = DF (unused — this stack always allows
 fragmentation), bit 2 = MF (more fragments).
