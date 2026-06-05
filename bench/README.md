@@ -1,6 +1,6 @@
 # Benchmark artifacts and evidence
 
-No benchmark result exists through Phase 07. Evidence files are correctness-gate
+No benchmark result exists through Phase 08. Evidence files are correctness-gate
 records, not performance results.
 
 Phase 03 commits a sanitized Instruments System Trace syscall timeline. Raw `.trace`

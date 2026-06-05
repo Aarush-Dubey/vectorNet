@@ -40,6 +40,7 @@ target_compile_options(vectornet_link PRIVATE
 )
 
 add_library(vectornet_net STATIC
+    src/net/fragmentation.cpp
     src/net/ipv4.cpp
 )
 add_library(vectornet::net ALIAS vectornet_net)
@@ -92,6 +93,17 @@ add_executable(vectornet_ethernet_probe tools/ethernet_probe.cpp)
 target_compile_features(vectornet_ethernet_probe PRIVATE cxx_std_20)
 target_link_libraries(vectornet_ethernet_probe PRIVATE vectornet::link)
 target_compile_options(vectornet_ethernet_probe PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
+add_executable(vectornet_fragment_probe tools/fragment_probe.cpp)
+target_compile_features(vectornet_fragment_probe PRIVATE cxx_std_20)
+target_link_libraries(vectornet_fragment_probe PRIVATE vectornet::net)
+target_compile_options(vectornet_fragment_probe PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -159,4 +171,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.ipv4 COMMAND vectornet_ipv4_test)
+
+    add_executable(vectornet_fragmentation_test test/fragmentation_test.cpp)
+    target_compile_features(vectornet_fragmentation_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_fragmentation_test PRIVATE vectornet::net)
+    target_compile_options(vectornet_fragmentation_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.fragmentation COMMAND vectornet_fragmentation_test)
 endif()

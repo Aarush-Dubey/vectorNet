@@ -186,7 +186,11 @@ fragment(payload, mtu):
 ```
 
 Same `identification` value across all fragments of one datagram; sender
-increments a per-connection counter for each new datagram.
+increments a 16-bit per-connection counter for each new datagram, with defined
+wraparound. Implementation consumes an input span and caller-owned MTU-sized scratch
+buffer. Callback receives each serialized fragment only for callback duration.
+Non-final payload sizes are multiples of eight; no heap storage is created by the
+fragmentation function.
 
 ### 2.3 Reassembly (receive side)
 

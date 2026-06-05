@@ -39,6 +39,13 @@ process logs and keeps its address-bearing packet capture ignored:
 scripts/phase04_feth_ethernet.sh
 ```
 
+`phase08_fragment_reference.sh` needs no sudo. It emits a DLT_RAW pcap, decodes the
+fragment set with system `tcpdump`, and validates sizes plus byte offsets:
+
+```sh
+scripts/phase08_fragment_reference.sh
+```
+
 Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
 `sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
 or interruption. Unit tests must never call these scripts.

@@ -40,6 +40,24 @@ enum class Ipv4Status : std::uint8_t {
     invalid_checksum,
     payload_too_large,
     output_too_small,
+    invalid_mtu,
+    callback_rejected,
+};
+
+inline constexpr std::uint16_t kIpv4FlagMoreFragments = 0x2000;
+inline constexpr std::uint16_t kIpv4FragmentOffsetMask = 0x1FFF;
+
+using Ipv4FragmentCallback = bool (*)(
+    void* context,
+    std::span<const std::byte> packet) noexcept;
+
+class Ipv4IdentificationGenerator final {
+public:
+    explicit Ipv4IdentificationGenerator(std::uint16_t initial = 0) noexcept;
+    [[nodiscard]] std::uint16_t next() noexcept;
+
+private:
+    std::uint16_t next_;
 };
 
 [[nodiscard]] std::uint16_t internet_checksum(
@@ -54,5 +72,13 @@ enum class Ipv4Status : std::uint8_t {
     std::span<const std::byte> payload,
     std::span<std::byte> output,
     std::size_t& packet_bytes) noexcept;
+
+[[nodiscard]] Ipv4Status fragment_ipv4_payload(
+    const Ipv4Header& header,
+    std::span<const std::byte> payload,
+    std::size_t mtu,
+    std::span<std::byte> scratch,
+    Ipv4FragmentCallback callback,
+    void* callback_context) noexcept;
 
 }  // namespace vectornet::net
