@@ -197,19 +197,15 @@ fragmentation function.
 ```cpp
 struct FragKey { uint32_t src, dst; uint16_t id; uint8_t proto; };  // hashable
 
-struct HoleList {
-    // Sorted, non-overlapping list of [start, end) byte ranges not yet received.
-    std::vector<std::pair<uint32_t,uint32_t>> holes;
-};
-
 struct ReassemblyBuffer {
-    std::vector<uint8_t> data;     // sized once total_length is known (last frag)
-    HoleList holes;
+    std::array<uint8_t, 65515> data;
+    std::array<Hole, 8192> holes; // sorted missing [start,end) ranges
+    size_t hole_count;
     uint64_t created_at_ns;
     bool     total_length_known;
 };
 
-std::unordered_map<FragKey, ReassemblyBuffer, FragKeyHash> table;
+std::array<ReassemblyBuffer, 64> table; // storage allocated during initialization
 ```
 
 **Insert-fragment algorithm** (handles Phase 10's overlap/duplicate case):
@@ -229,11 +225,9 @@ on_fragment(key, frag_offset, frag_data, more_flag):
         table.erase(key)
 ```
 
-**Timeout sweep** (separate timer thread, per HLD §6): every `SWEEP_INTERVAL`,
-scan `table` for entries with `now - created_at_ns > REASSEMBLY_TIMEOUT`, drop
-them and release their pooled buffers. `REASSEMBLY_TIMEOUT` is configurable and
-should be short (low single-digit seconds) for benchmark runs, not the
-kernel-conventional 30–60s.
+**Timeout sweep** runs from the owner thread's timer path. It scans active slots and
+releases entries once `now - created_at_ns >= 5s`. No timer thread exists. Table-full,
+malformed, completion, and timeout outcomes have bounded counters.
 
 ---
 

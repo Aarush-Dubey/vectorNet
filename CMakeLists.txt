@@ -42,6 +42,7 @@ target_compile_options(vectornet_link PRIVATE
 add_library(vectornet_net STATIC
     src/net/fragmentation.cpp
     src/net/ipv4.cpp
+    src/net/reassembly.cpp
 )
 add_library(vectornet::net ALIAS vectornet_net)
 target_compile_features(vectornet_net PUBLIC cxx_std_20)
@@ -183,4 +184,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.fragmentation COMMAND vectornet_fragmentation_test)
+
+    add_executable(vectornet_reassembly_test test/reassembly_test.cpp)
+    target_compile_features(vectornet_reassembly_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_reassembly_test PRIVATE vectornet::net)
+    target_compile_options(vectornet_reassembly_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.reassembly COMMAND vectornet_reassembly_test)
 endif()
