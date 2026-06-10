@@ -198,11 +198,58 @@ bool deliver_datagram(
                   "unfragmented delivery mismatch");
 }
 
+[[nodiscard]] bool test_first_arrival_wins_overlap() {
+    vectornet::net::ReassemblyTable table(1, 100);
+    Delivery delivery{};
+    auto first = base_header(0x7777);
+    first.flags_fragment_offset = vectornet::net::kIpv4FlagMoreFragments;
+    std::array<std::byte, 16> first_payload{};
+    for (std::size_t index = 0; index < first_payload.size(); ++index) {
+        first_payload[index] = static_cast<std::byte>(index);
+    }
+    if (!expect(
+            table.insert(first, first_payload, 0, &deliver_datagram, &delivery) ==
+                ReassemblyStatus::pending,
+            "first overlap fragment rejected") ||
+        !expect(
+            table.insert(first, first_payload, 1, &deliver_datagram, &delivery) ==
+                ReassemblyStatus::pending,
+            "duplicate fragment changed state")) {
+        return false;
+    }
+
+    auto final = base_header(0x7777);
+    final.flags_fragment_offset = 1;
+    std::array<std::byte, 16> final_payload{};
+    std::fill(final_payload.begin(), final_payload.begin() + 8, std::byte{0xEE});
+    for (std::size_t index = 8; index < final_payload.size(); ++index) {
+        final_payload[index] = static_cast<std::byte>(index + 8);
+    }
+    if (!expect(
+            table.insert(final, final_payload, 2, &deliver_datagram, &delivery) ==
+                ReassemblyStatus::complete,
+            "overlapping final fragment did not complete") ||
+        !expect(delivery.bytes == 24, "overlap result size mismatch")) {
+        return false;
+    }
+    for (std::size_t index = 0; index < delivery.bytes; ++index) {
+        if (!expect(
+                delivery.payload[index] == static_cast<std::byte>(index),
+                "later overlap overwrote first-arrival byte")) {
+            return false;
+        }
+    }
+    const auto stats = table.statistics();
+    return expect(stats.duplicate_fragments == 1, "duplicate counter mismatch") &&
+           expect(stats.overlap_bytes_ignored == 24, "ignored-overlap counter mismatch");
+}
+
 }  // namespace
 
 int main() {
     return test_out_of_order_completion() && test_timeout_and_capacity() &&
-                   test_malformed_and_unfragmented()
+                   test_malformed_and_unfragmented() &&
+                   test_first_arrival_wins_overlap()
                ? 0
                : 1;
 }

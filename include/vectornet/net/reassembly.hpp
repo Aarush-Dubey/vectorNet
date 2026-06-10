@@ -45,6 +45,8 @@ struct ReassemblyStatistics {
     std::uint64_t malformed{0};
     std::uint64_t table_full{0};
     std::uint64_t timed_out{0};
+    std::uint64_t duplicate_fragments{0};
+    std::uint64_t overlap_bytes_ignored{0};
 };
 
 class ReassemblyTable final {
@@ -98,6 +100,10 @@ private:
         Slot& slot,
         std::size_t begin,
         std::size_t end) noexcept;
+    [[nodiscard]] std::size_t copy_unreceived_bytes(
+        Slot& slot,
+        std::size_t begin,
+        std::span<const std::byte> fragment_payload) noexcept;
     [[nodiscard]] bool is_complete(const Slot& slot) const noexcept;
     void release(Slot& slot) noexcept;
 

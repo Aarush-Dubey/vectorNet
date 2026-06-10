@@ -15,6 +15,7 @@ if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
 endif()
 
 include(CTest)
+option(VECTORNET_BUILD_FUZZERS "Build sanitizer-backed libFuzzer targets" OFF)
 
 add_library(vectornet_link STATIC
     src/link/arp.cpp
@@ -57,6 +58,16 @@ target_compile_options(vectornet_net PRIVATE
     -Wconversion
     -Wsign-conversion
 )
+
+if(VECTORNET_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
+        message(FATAL_ERROR "VECTORNET_BUILD_FUZZERS requires Clang")
+    endif()
+    target_compile_options(vectornet_net PRIVATE
+        -fsanitize=address,undefined,fuzzer-no-link
+        -fno-omit-frame-pointer
+    )
+endif()
 
 add_executable(vectornet_link_probe tools/link_probe.cpp)
 target_compile_features(vectornet_link_probe PRIVATE cxx_std_20)
@@ -111,6 +122,22 @@ target_compile_options(vectornet_fragment_probe PRIVATE
     -Wconversion
     -Wsign-conversion
 )
+
+if(VECTORNET_BUILD_FUZZERS)
+    add_executable(vectornet_reassembly_fuzzer test/fuzz/reassembly_fuzz.cpp)
+    target_compile_features(vectornet_reassembly_fuzzer PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_reassembly_fuzzer PRIVATE vectornet::net)
+    target_compile_options(vectornet_reassembly_fuzzer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -fsanitize=address,undefined,fuzzer
+        -fno-omit-frame-pointer
+    )
+    target_link_options(vectornet_reassembly_fuzzer PRIVATE
+        -fsanitize=address,undefined,fuzzer
+    )
+endif()
 
 if(BUILD_TESTING)
     add_executable(vectornet_scaffold_test test/scaffold_test.cpp)

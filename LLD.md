@@ -208,18 +208,17 @@ struct ReassemblyBuffer {
 std::array<ReassemblyBuffer, 64> table; // storage allocated during initialization
 ```
 
-**Insert-fragment algorithm** (handles Phase 10's overlap/duplicate case):
+**Insert-fragment algorithm** (first-arrival-wins overlap policy):
 ```
 on_fragment(key, frag_offset, frag_data, more_flag):
     buf = table[key]  // created on first fragment for this key
     end = frag_offset + frag_data.size()
     if not more_flag: buf.total_length_known = true; resize buf.data to end
-    // Merge into hole list: remove/shrink any hole segments covered by
-    // [frag_offset, end); a fragment overlapping two holes and the gap between
-    // them splits into the covered sub-ranges, each processed independently so
-    // a partial overlap never double-writes past its own bounds.
+    // Copy only intersections with current holes. Bytes outside holes arrived
+    // earlier and are never overwritten. Then remove/shrink covered holes.
+    copy intersections(frag_data, buf.holes) into buf.data
     buf.holes.remove_covered(frag_offset, end)
-    copy frag_data into buf.data[frag_offset:end]
+    count fully-covered fragment as duplicate; count ignored overlap bytes
     if buf.holes.empty() and buf.total_length_known:
         deliver buf.data to net→transport handoff
         table.erase(key)

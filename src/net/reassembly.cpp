@@ -68,11 +68,12 @@ ReassemblyStatus ReassemblyTable::insert(
         return ReassemblyStatus::malformed;
     }
 
-    if (!fragment_payload.empty()) {
-        std::memcpy(slot->data.data() + offset,
-                    fragment_payload.data(),
-                    fragment_payload.size());
+    const std::size_t copied =
+        copy_unreceived_bytes(*slot, offset, fragment_payload);
+    if (!fragment_payload.empty() && copied == 0) {
+        ++statistics_.duplicate_fragments;
     }
+    statistics_.overlap_bytes_ignored += fragment_payload.size() - copied;
     slot->highest_received_end = std::max(slot->highest_received_end, end);
     if (!subtract_received_range(*slot, offset, end)) {
         release(*slot);
@@ -232,6 +233,31 @@ bool ReassemblyTable::subtract_received_range(
         return true;
     }
     return true;
+}
+
+std::size_t ReassemblyTable::copy_unreceived_bytes(
+    Slot& slot,
+    std::size_t begin,
+    std::span<const std::byte> fragment_payload) noexcept {
+    const std::size_t end = begin + fragment_payload.size();
+    std::size_t copied = 0;
+    for (std::size_t index = 0; index < slot.hole_count; ++index) {
+        const auto& hole = slot.holes[index];
+        const std::size_t copy_begin =
+            std::max(begin, static_cast<std::size_t>(hole.begin));
+        const std::size_t copy_end =
+            std::min(end, static_cast<std::size_t>(hole.end));
+        if (copy_begin >= copy_end) {
+            continue;
+        }
+        const std::size_t bytes = copy_end - copy_begin;
+        std::memcpy(
+            slot.data.data() + copy_begin,
+            fragment_payload.data() + (copy_begin - begin),
+            bytes);
+        copied += bytes;
+    }
+    return copied;
 }
 
 bool ReassemblyTable::is_complete(const Slot& slot) const noexcept {

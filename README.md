@@ -1,9 +1,9 @@
 # vectorNet
 
 Userspace IPv4 and custom transport stack for macOS/Darwin on Apple Silicon.
-Raw Ethernet integration uses buffered Berkeley Packet Filter devices. Phase 02 opens
-and binds BPF to a canonical `feth0`/`feth1` pair, validates Ethernet DLT, discovers
-interface metadata, and sends frames. Buffered batch receive remains Phase 03 work.
+Raw Ethernet integration uses buffered Berkeley Packet Filter devices on the canonical
+`feth0`/`feth1` pair. The implemented link and network layers cover BPF batch I/O,
+Ethernet, ARP, IPv4 fragmentation, and bounded reassembly through Phase 10.
 
 ## Build
 
@@ -15,6 +15,15 @@ ctest --test-dir build --output-on-failure
 
 Unit tests require no elevated privileges. Later raw-link and dummynet integration
 scripts will isolate every privileged action under `scripts/` and restore host state.
+
+The Phase 10 sanitizer gate needs upstream libFuzzer. Xcode 26.6's Apple Clang package
+does not include `libclang_rt.fuzzer_osx.a` on this host, so the script uses keg-only
+Homebrew LLVM without replacing the normal Apple Clang toolchain:
+
+```sh
+brew install llvm
+scripts/phase10_reassembly_fuzz.sh
+```
 
 See `AGENTS.md` for the phase gates, `HLD.md` for architecture, and `LLD.md` for
 data structures and algorithms. Performance statements remain hypotheses until a
