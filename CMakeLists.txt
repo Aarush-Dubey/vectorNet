@@ -16,6 +16,7 @@ endif()
 
 include(CTest)
 option(VECTORNET_BUILD_FUZZERS "Build sanitizer-backed libFuzzer targets" OFF)
+option(VECTORNET_ENABLE_TSAN "Instrument the Phase 12 handoff gate with TSan" OFF)
 
 add_library(vectornet_alloc STATIC
     src/alloc/packet_pool.cpp
@@ -33,6 +34,12 @@ target_compile_options(vectornet_alloc PRIVATE
     -Wconversion
     -Wsign-conversion
 )
+if(VECTORNET_ENABLE_TSAN)
+    target_compile_options(vectornet_alloc PRIVATE
+        -fsanitize=thread
+        -fno-omit-frame-pointer
+    )
+endif()
 
 add_library(vectornet_link STATIC
     src/link/arp.cpp
@@ -271,4 +278,35 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.packet_pool COMMAND vectornet_packet_pool_test)
+
+    add_executable(vectornet_spsc_ring_test test/spsc_ring_test.cpp)
+    target_compile_features(vectornet_spsc_ring_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_spsc_ring_test PRIVATE vectornet::alloc)
+    target_compile_options(vectornet_spsc_ring_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.spsc_ring COMMAND vectornet_spsc_ring_test)
+
+    add_executable(vectornet_spsc_stress test/spsc_stress.cpp)
+    target_compile_features(vectornet_spsc_stress PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_spsc_stress PRIVATE vectornet::alloc)
+    target_compile_options(vectornet_spsc_stress PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    if(VECTORNET_ENABLE_TSAN)
+        target_compile_options(vectornet_spsc_stress PRIVATE
+            -fsanitize=thread
+            -fno-omit-frame-pointer
+        )
+        target_link_options(vectornet_spsc_stress PRIVATE -fsanitize=thread)
+    endif()
+    add_test(NAME vectornet.spsc_stress COMMAND vectornet_spsc_stress)
 endif()

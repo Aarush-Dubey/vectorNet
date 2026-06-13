@@ -62,6 +62,13 @@ allocation and deallocation counter is zero:
 scripts/phase11_allocation_gate.sh
 ```
 
+`phase12_tsan.sh` builds only the owner-pool SPSC stress target with Apple Clang's
+ThreadSanitizer and aborts on the first race report:
+
+```sh
+scripts/phase12_tsan.sh
+```
+
 Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
 `sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
 or interruption. Unit tests must never call these scripts.

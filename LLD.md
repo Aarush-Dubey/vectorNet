@@ -273,28 +273,30 @@ symbol lookup happen before the hot window. The committed run covers 5,120,000
 pool operations with zero observed allocation/deallocation calls; this establishes
 only the allocation invariant, not a throughput result.
 
-### 3.3 Lock-free freelist (Phase 12, cross-thread RX/TX)
+### 3.3 Owner-local pool + bounded SPSC handoff (Phase 12)
 
-Tagged-pointer Treiber stack to avoid ABA:
+Packet pools are not concurrently mutated. The owner thread acquires and releases
+its buffers. It sends buffer pointers through a bounded SPSC ring; the consumer
+returns them through a second bounded SPSC ring:
 
 ```cpp
-struct alignas(16) TaggedPtr { PacketBuffer* ptr; uint64_t tag; };
-std::atomic<TaggedPtr> head;   // requires double-word CAS (DWCAS)
+template<class T, size_t Capacity>
+struct SpscRing {
+    static_assert(std::has_single_bit(Capacity));
+    struct alignas(64) Cursor { std::atomic<size_t> value; };
+    Cursor producer;
+    Cursor consumer;
+    alignas(64) std::array<T, Capacity> slots;
 
-PacketBuffer* acquire() {
-    TaggedPtr old = head.load(std::memory_order_acquire);
-    TaggedPtr next;
-    do {
-        if (!old.ptr) return nullptr;
-        next = { old.ptr->next_free, old.tag + 1 };
-    } while (!head.compare_exchange_weak(old, next, std::memory_order_acq_rel));
-    return old.ptr;
-}
+    bool try_push(T value); // release-publish after slot write
+    bool try_pop(T& value); // acquire-observe before slot read
+};
 ```
 
-Shared atomic head is padded to its own cache line (`alignas(64)` on the
-containing struct) so RX-thread acquires and TX-thread releases don't false-share
-with unrelated hot fields.
+Capacity is a power of two; full/empty states return explicit failure. Producer and
+consumer cursors occupy separate 64-byte cache lines. This avoids shared freelist
+mutation, ABA tags, and 128-bit CAS assumptions. Phase 12 commits a TSan-clean
+million-transfer handoff/recycle run.
 
 ---
 

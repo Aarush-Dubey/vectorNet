@@ -120,11 +120,13 @@ to reason about and easy to compare fairly against kernel TCP.
   reassembly.
 - **TX thread**: owns retransmission-queue draining and link writes. Separate from
   RX to avoid one direction's syscalls stalling the other.
-- **Timer thread** (or timer wheel driven off a lightweight event loop): drives
-  RTO expiry checks and reassembly-timeout sweeps — decoupled from the data-path
-  threads so a timer check never blocks a packet in flight.
-- Cross-thread handoff (buffer pool freelist, retransmission queue) uses lock-free
-  structures (Phase 12) — no mutex sits between RX/TX threads and the shared pool.
+- **Timers** live in the relevant owner thread's `kqueue`: RX owns reassembly
+  timeout sweeps; TX owns retransmission and congestion timers. There is no third
+  timer thread.
+- Cross-thread traffic uses bounded SPSC rings with cache-line-separated cursors.
+  Pools remain owner-local; a reverse SPSC ring returns buffers to their owner.
+  Application→TX and RX→TX rings signal the TX kqueue through `EVFILT_USER`. No
+  mutex or 128-bit tagged CAS sits on the handoff path.
 - This is a **single-connection-per-process** model for the initial build (matches
   the benchmark scenario); multi-connection sharding is an explicit non-goal
   unless a later phase adds it.
