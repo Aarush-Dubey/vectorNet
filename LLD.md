@@ -236,26 +236,42 @@ malformed, completion, and timeout outcomes have bounded counters.
 
 ```cpp
 struct alignas(64) PacketBuffer {
-    uint8_t  data[BUFFER_CAPACITY];   // sized to one MTU-class frame
-    uint16_t len;
-    // pad to 64-byte multiple implicitly via alignas + capacity choice
+    std::array<std::byte, 2048> data;
+    uint16_t length;
 };
+static_assert(sizeof(PacketBuffer) % 64 == 0);
 ```
+
+The default pool allocates 4,096 buffers during initialization. A buffer holds one
+MTU-class frame plus headroom. Pool exhaustion returns `nullptr`; it never falls
+back to the heap. Invalid and double releases are rejected and counted.
 
 ### 3.2 Freelist (single-threaded variant, Phase 11)
 
 ```cpp
 class Pool {
-    std::vector<PacketBuffer> storage;      // fixed, allocated once at init
-    std::vector<PacketBuffer*> freelist;    // stack of available buffers
+    std::unique_ptr<PacketBuffer[]> storage; // allocated once at init
+    std::unique_ptr<size_t[]> freelist;      // fixed index stack
+    std::unique_ptr<uint8_t[]> in_use;       // fixed release validation
+    size_t available;
 public:
     PacketBuffer* acquire() {
-        if (freelist.empty()) return nullptr;  // pool exhaustion is a signal, not silently grown
-        auto* b = freelist.back(); freelist.pop_back(); return b;
+        if (available == 0) return nullptr;
+        return &storage[freelist[--available]];
     }
-    void release(PacketBuffer* b) { freelist.push_back(b); }
+    bool release(PacketBuffer* b) {
+        validate ownership and one active acquisition;
+        freelist[available++] = index_of(b);
+        return true;
+    }
 };
 ```
+
+The Phase-11 gate injects a Darwin DYLD interposer for `malloc`, `calloc`,
+`realloc`, `free`, scalar/array `new`, and scalar/array `delete`. Gate control and
+symbol lookup happen before the hot window. The committed run covers 5,120,000
+pool operations with zero observed allocation/deallocation calls; this establishes
+only the allocation invariant, not a throughput result.
 
 ### 3.3 Lock-free freelist (Phase 12, cross-thread RX/TX)
 

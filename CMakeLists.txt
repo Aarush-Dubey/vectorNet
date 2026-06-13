@@ -17,6 +17,23 @@ endif()
 include(CTest)
 option(VECTORNET_BUILD_FUZZERS "Build sanitizer-backed libFuzzer targets" OFF)
 
+add_library(vectornet_alloc STATIC
+    src/alloc/packet_pool.cpp
+)
+add_library(vectornet::alloc ALIAS vectornet_alloc)
+target_compile_features(vectornet_alloc PUBLIC cxx_std_20)
+target_include_directories(vectornet_alloc
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_options(vectornet_alloc PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
 add_library(vectornet_link STATIC
     src/link/arp.cpp
     src/link/ethernet.cpp
@@ -123,6 +140,25 @@ target_compile_options(vectornet_fragment_probe PRIVATE
     -Wsign-conversion
 )
 
+add_executable(vectornet_packet_pool_bench tools/packet_pool_bench.cpp)
+target_compile_features(vectornet_packet_pool_bench PRIVATE cxx_std_20)
+target_link_libraries(vectornet_packet_pool_bench PRIVATE vectornet::alloc)
+target_compile_options(vectornet_packet_pool_bench PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
+add_library(vectornet_alloc_interposer SHARED test/alloc_interposer.cpp)
+target_compile_features(vectornet_alloc_interposer PRIVATE cxx_std_20)
+target_compile_options(vectornet_alloc_interposer PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
 if(VECTORNET_BUILD_FUZZERS)
     add_executable(vectornet_reassembly_fuzzer test/fuzz/reassembly_fuzz.cpp)
     target_compile_features(vectornet_reassembly_fuzzer PRIVATE cxx_std_20)
@@ -223,4 +259,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.reassembly COMMAND vectornet_reassembly_test)
+
+    add_executable(vectornet_packet_pool_test test/packet_pool_test.cpp)
+    target_compile_features(vectornet_packet_pool_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_packet_pool_test PRIVATE vectornet::alloc)
+    target_compile_options(vectornet_packet_pool_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.packet_pool COMMAND vectornet_packet_pool_test)
 endif()

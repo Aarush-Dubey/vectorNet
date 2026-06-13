@@ -1,7 +1,9 @@
 # Benchmark artifacts and evidence
 
-No benchmark result exists through Phase 10. Evidence files are correctness-gate
-records, not performance results.
+No transport-performance result exists through Phase 11. Most evidence files are
+correctness-gate records, not performance results. Phase 11 commits its allocation
+interposer run solely as evidence for the zero-hot-window-allocation invariant; the
+operation count is not a latency or throughput claim.
 
 Phase 03 commits a sanitized Instruments System Trace syscall timeline. Raw `.trace`
 bundles and XML stay local because they contain device and binary UUIDs. The committed

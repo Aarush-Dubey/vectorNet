@@ -46,6 +46,22 @@ fragment set with system `tcpdump`, and validates sizes plus byte offsets:
 scripts/phase08_fragment_reference.sh
 ```
 
+`phase10_reassembly_fuzz.sh` uses Homebrew LLVM's upstream libFuzzer runtime with
+ASan/UBSan. The Xcode 26.6 package on the measured host lacks the runtime archive:
+
+```sh
+brew install llvm
+scripts/phase10_reassembly_fuzz.sh
+```
+
+`phase11_allocation_gate.sh` injects the project DYLD allocation interposer into a
+sustained packet-pool loop. It needs no sudo and exits nonzero unless every hot-window
+allocation and deallocation counter is zero:
+
+```sh
+scripts/phase11_allocation_gate.sh
+```
+
 Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
 `sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
 or interruption. Unit tests must never call these scripts.

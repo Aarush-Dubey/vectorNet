@@ -3,7 +3,8 @@
 Userspace IPv4 and custom transport stack for macOS/Darwin on Apple Silicon.
 Raw Ethernet integration uses buffered Berkeley Packet Filter devices on the canonical
 `feth0`/`feth1` pair. The implemented link and network layers cover BPF batch I/O,
-Ethernet, ARP, IPv4 fragmentation, and bounded reassembly through Phase 10.
+Ethernet, ARP, IPv4 fragmentation, bounded reassembly, and the initialization-sized
+packet pool through Phase 11.
 
 ## Build
 
