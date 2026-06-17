@@ -1,6 +1,6 @@
 # Benchmark artifacts and evidence
 
-No transport-performance result exists through Phase 12. Most evidence files are
+No transport-performance result exists through Phase 13. Most evidence files are
 correctness-gate records, not performance results. Phase 11 commits its allocation
 interposer run solely as evidence for the zero-hot-window-allocation invariant; the
 operation count is not a latency or throughput claim.

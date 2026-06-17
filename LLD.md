@@ -305,21 +305,22 @@ million-transfer handoff/recycle run.
 ### 4.1 Wire header
 
 ```cpp
-#pragma pack(push, 1)
 struct TransportHeader {
-    uint32_t seq;
+    uint32_t sequence;
     uint32_t cumulative_ack;
-    uint8_t  flags;          // SYN, ACK, FIN, RST bits
-    uint8_t  sack_count;      // 0..MAX_SACK_BLOCKS
-    uint16_t window;
-    // followed by sack_count * SackBlock, variable length
+    uint8_t  flags;      // SYN=1, ACK=2, FIN=4, RST=8
+    uint8_t  sack_count; // 0..4
+    uint16_t window;     // available bytes, capped at 65,535
+    std::array<SackBlock, 4> sacks;
 };
 struct SackBlock { uint32_t start; uint32_t end; };
-#pragma pack(pop)
 ```
 
-`MAX_SACK_BLOCKS` fixed (e.g. 4) so the header's max size is known at compile time
-for pool-buffer sizing.
+The serialized fixed portion is exactly 12 bytes, followed by `sack_count` 8-byte
+blocks, for a 44-byte maximum. Multi-byte fields use network byte order. SACK
+ranges are half-open `[start,end)` ranges and cannot be empty. Payload starts after
+the declared blocks. Normal MSS reserves the worst-case 44-byte transport header
+plus the 20-byte IPv4 header, avoiding IP fragmentation in ordinary transport use.
 
 ### 4.2 Connection state machine
 
