@@ -26,3 +26,27 @@ after the final declared block.
 Normal transport MSS is derived from the link MTU minus the 20-byte IPv4 header
 and worst-case 44-byte transport header. This prevents normal transport segments
 from depending on IPv4 fragmentation.
+
+## Connection transition table
+
+| State | Event | Next state | Wire/application action |
+|---|---|---|---|
+| CLOSED | app connect | SYN_SENT | send SYN |
+| CLOSED | receive SYN | SYN_RECEIVED | send SYN+ACK |
+| SYN_SENT | receive SYN | SYN_RECEIVED | send SYN+ACK |
+| SYN_SENT | receive SYN+ACK | ESTABLISHED | send ACK; connected |
+| SYN_RECEIVED | receive ACK | ESTABLISHED | connected |
+| ESTABLISHED | app close | FIN_WAIT_1 | send FIN |
+| ESTABLISHED | receive FIN | CLOSE_WAIT | send ACK |
+| FIN_WAIT_1 | receive ACK | FIN_WAIT_2 | none |
+| FIN_WAIT_1 | receive FIN | TIME_WAIT | send ACK |
+| FIN_WAIT_2 | receive FIN | TIME_WAIT | send ACK |
+| CLOSE_WAIT | app close | LAST_ACK | send FIN |
+| LAST_ACK | receive ACK | CLOSED | closed |
+| TIME_WAIT | timeout | CLOSED | closed |
+| any non-closed state | receive RST | CLOSED | error; closed |
+
+Undefined pairs are rejected. They close the connection, request one RST at most
+for that connection attempt, and emit an application-error action. CLOSED receiving
+RST reports error without answering RST; a stale TIME_WAIT timeout in CLOSED is a
+no-op.

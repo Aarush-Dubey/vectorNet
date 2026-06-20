@@ -332,16 +332,17 @@ plus the 20-byte IPv4 header, avoiding IP fragmentation in ordinary transport us
 | SYN_RCVD | receive ACK | ESTABLISHED |
 | ESTABLISHED | app calls `close()` | FIN_WAIT (send FIN) |
 | ESTABLISHED | receive FIN | CLOSE_WAIT (send ACK) |
-| FIN_WAIT | receive ACK of FIN | FIN_WAIT2 |
-| FIN_WAIT2 | receive FIN | TIME_WAIT (send ACK) |
+| FIN_WAIT_1 | receive ACK of FIN | FIN_WAIT_2 |
+| FIN_WAIT_1 | receive FIN | TIME_WAIT (send ACK) |
+| FIN_WAIT_2 | receive FIN | TIME_WAIT (send ACK) |
 | CLOSE_WAIT | app calls `close()` | LAST_ACK (send FIN) |
 | LAST_ACK | receive ACK | CLOSED |
 | TIME_WAIT | timeout (2×MSL-equivalent) | CLOSED |
 | any | receive RST | CLOSED (abort, notify app) |
 
-Any transition not listed is invalid and must be rejected (logged, connection
-reset) rather than silently ignored — this is what Phase 14's exit criteria
-checks.
+Any transition not listed is invalid. It moves to CLOSED, requests at most one RST
+for the connection attempt, and emits an application-error action. Phase 14's
+exhaustive test covers every state/event pair.
 
 ### 4.3 Retransmission queue (sender)
 

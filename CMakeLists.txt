@@ -94,6 +94,7 @@ if(VECTORNET_BUILD_FUZZERS)
 endif()
 
 add_library(vectornet_transport STATIC
+    src/transport/state_machine.cpp
     src/transport/wire.cpp
 )
 add_library(vectornet::transport ALIAS vectornet_transport)
@@ -339,4 +340,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.transport_wire COMMAND vectornet_transport_wire_test)
+
+    add_executable(vectornet_state_machine_test test/state_machine_test.cpp)
+    target_compile_features(vectornet_state_machine_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_state_machine_test PRIVATE vectornet::transport)
+    target_compile_options(vectornet_state_machine_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.state_machine COMMAND vectornet_state_machine_test)
 endif()
