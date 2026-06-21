@@ -94,6 +94,7 @@ if(VECTORNET_BUILD_FUZZERS)
 endif()
 
 add_library(vectornet_transport STATIC
+    src/transport/retransmission_queue.cpp
     src/transport/state_machine.cpp
     src/transport/wire.cpp
 )
@@ -352,4 +353,25 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.state_machine COMMAND vectornet_state_machine_test)
+
+    add_executable(
+        vectornet_retransmission_queue_test
+        test/retransmission_queue_test.cpp
+    )
+    target_compile_features(vectornet_retransmission_queue_test PRIVATE cxx_std_20)
+    target_link_libraries(
+        vectornet_retransmission_queue_test
+        PRIVATE vectornet::transport
+    )
+    target_compile_options(vectornet_retransmission_queue_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(
+        NAME vectornet.retransmission_queue
+        COMMAND vectornet_retransmission_queue_test
+    )
 endif()

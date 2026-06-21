@@ -354,10 +354,15 @@ struct PendingSegment {
     uint16_t retransmit_count;
     bool     sacked;          // set true when a SACK block covers this range
 };
-std::map<uint32_t, PendingSegment> queue;  // keyed by seq_start, ordered
+std::array<PendingSegment, 1024> queue;
+size_t queue_size;
 ```
 
-On cumulative ack advancing past `seq_end`: erase and release buffer.
+Insertion is ordered with modulo-2^32 sequence helpers and rejects duplicate or
+backward starts. Distances are constrained by the advertised window to less than
+half the sequence space. On cumulative ACK advancing through `sequence_end`, remove
+the acknowledged prefix, compact the fixed array, and immediately release every
+buffer to its owner pool. Full queues return backpressure; no map or heap node exists.
 On a SACK block covering `[seq_start, seq_end)`: mark `sacked = true` but do
 **not** erase (still needed if a later cumulative ack hasn't caught up, and for
 RTO/Karn accounting) — erase only once cumulative ack passes it.

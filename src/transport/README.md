@@ -50,3 +50,11 @@ Undefined pairs are rejected. They close the connection, request one RST at most
 for that connection attempt, and emit an application-error action. CLOSED receiving
 RST reports error without answering RST; a stale TIME_WAIT timeout in CLOSED is a
 no-op.
+
+## Sender retention
+
+The TX owner keeps at most 1,024 `PendingSegment` records in a fixed array ordered
+by wrap-safe sequence helpers. Each record owns one pooled buffer until cumulative
+ACK processing releases it. ACK processing removes only fully acknowledged prefix
+segments and returns their buffers immediately. Queue exhaustion is explicit
+backpressure; it never allocates a map node or falls back to heap storage.
