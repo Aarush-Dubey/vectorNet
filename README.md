@@ -5,8 +5,8 @@ Raw Ethernet integration uses buffered Berkeley Packet Filter devices on the can
 `feth0`/`feth1` pair. The implemented link and network layers cover BPF batch I/O,
 Ethernet, ARP, IPv4 fragmentation, bounded reassembly, and the initialization-sized
 packet pool, bounded owner-to-owner SPSC handoff, and the fixed transport wire
-format, explicit connection state table, and fixed retransmission retention through
-Phase 15.
+format, explicit connection state table, fixed retransmission retention, and bounded
+RX reordering/SACK generation through Phase 16.
 
 ## Build
 

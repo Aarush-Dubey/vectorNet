@@ -372,8 +372,8 @@ RTO/Karn accounting) — erase only once cumulative ack passes it.
 ```cpp
 struct RecvBuffer {
     uint32_t cumulative_ack;   // highest contiguous byte received + 1
-    // Sorted set of received-but-not-yet-contiguous ranges:
-    std::vector<std::pair<uint32_t,uint32_t>> received_ranges;
+    std::array<SackBlock, 1024> received_ranges;
+    size_t range_count;
 };
 
 generate_sack_blocks(buf, max_blocks):
@@ -381,6 +381,11 @@ generate_sack_blocks(buf, max_blocks):
     // (ordered nearest-to-cumulative_ack first, so the most actionable gaps
     //  are reported first if MAX_SACK_BLOCKS truncates the full set)
 ```
+
+Insertion merges adjacent/overlapping half-open ranges. When a range reaches the
+cumulative ACK, RX advances through every now-contiguous stored range. Full storage
+returns an explicit drop status; no vector grows and ordering uses the sender's
+modulo-2^32 helpers.
 
 ### 4.5 Sender-side SACK processing → selective retransmit
 

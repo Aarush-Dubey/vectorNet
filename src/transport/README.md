@@ -58,3 +58,11 @@ by wrap-safe sequence helpers. Each record owns one pooled buffer until cumulati
 ACK processing releases it. ACK processing removes only fully acknowledged prefix
 segments and returns their buffers immediately. Queue exhaustion is explicit
 backpressure; it never allocates a map node or falls back to heap storage.
+
+## Receiver ranges and SACK generation
+
+The RX owner keeps at most 1,024 sorted, non-overlapping received ranges. Inserts
+merge overlap and adjacency. A range beginning at cumulative ACK advances the ACK
+and consumes every now-contiguous buffered range. SACK generation copies at most
+four stored half-open ranges in nearest-gap-first order. Range-table exhaustion is
+an explicit RX drop and never grows storage.
