@@ -3,8 +3,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "vectornet/alloc/packet_pool.hpp"
+#include "vectornet/transport/wire.hpp"
 
 namespace vectornet::transport {
 
@@ -31,6 +33,11 @@ struct AcknowledgeResult {
     bool pool_error{false};
 };
 
+struct SackProcessingResult {
+    std::size_t newly_sacked{0};
+    std::size_t invalid_blocks{0};
+};
+
 class RetransmissionQueue final {
 public:
     explicit RetransmissionQueue(
@@ -41,6 +48,10 @@ public:
         std::uint32_t cumulative_ack,
         alloc::PacketPool& owner_pool) noexcept;
     [[nodiscard]] AcknowledgeResult clear(alloc::PacketPool& owner_pool) noexcept;
+    [[nodiscard]] SackProcessingResult apply_sacks(
+        std::span<const SackBlock> sacks) noexcept;
+    [[nodiscard]] std::size_t collect_unsacked(
+        std::span<PendingSegment*> output) noexcept;
 
     [[nodiscard]] const PendingSegment* at(std::size_t index) const noexcept;
     [[nodiscard]] PendingSegment* at(std::size_t index) noexcept;

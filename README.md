@@ -6,7 +6,7 @@ Raw Ethernet integration uses buffered Berkeley Packet Filter devices on the can
 Ethernet, ARP, IPv4 fragmentation, bounded reassembly, and the initialization-sized
 packet pool, bounded owner-to-owner SPSC handoff, and the fixed transport wire
 format, explicit connection state table, fixed retransmission retention, and bounded
-RX reordering/SACK generation through Phase 16.
+RX reordering/SACK generation and selective sender recovery through Phase 17.
 
 ## Build
 

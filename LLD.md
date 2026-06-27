@@ -394,7 +394,7 @@ on_ack_received(cumulative_ack, sack_blocks):
     for seg in queue where seg.seq_end <= cumulative_ack:
         release(seg)   // fully acked, in-order
     for block in sack_blocks:
-        for seg in queue overlapping block:
+        for seg in queue fully covered by block:
             seg.sacked = true
     // Determine holes: any PendingSegment with seq_start < cumulative_ack's
     // "should be acked by now" horizon, not marked sacked, and past RTO or
@@ -405,6 +405,8 @@ on_ack_received(cumulative_ack, sack_blocks):
 
 This is the mechanism distinguishing the design from go-back-N: a single lost
 segment triggers exactly one retransmission, not a resend of everything after it.
+Partial SACK overlap never marks a segment delivered; retained records are erased
+only by cumulative ACK.
 
 ### 4.6 Fast retransmit
 

@@ -73,6 +73,39 @@ AcknowledgeResult RetransmissionQueue::clear(
     return result;
 }
 
+SackProcessingResult RetransmissionQueue::apply_sacks(
+    std::span<const SackBlock> sacks) noexcept {
+    SackProcessingResult result{};
+    for (const auto& block : sacks) {
+        if (block.start == block.end) {
+            ++result.invalid_blocks;
+            continue;
+        }
+        for (std::size_t index = 0; index < size_; ++index) {
+            auto& segment = segments_[index];
+            const bool fully_covered =
+                sequence_less_equal(block.start, segment.sequence_start) &&
+                sequence_less_equal(segment.sequence_end, block.end);
+            if (fully_covered && !segment.sacked) {
+                segment.sacked = true;
+                ++result.newly_sacked;
+            }
+        }
+    }
+    return result;
+}
+
+std::size_t RetransmissionQueue::collect_unsacked(
+    std::span<PendingSegment*> output) noexcept {
+    std::size_t written = 0;
+    for (std::size_t index = 0; index < size_ && written < output.size(); ++index) {
+        if (!segments_[index].sacked) {
+            output[written++] = &segments_[index];
+        }
+    }
+    return written;
+}
+
 const PendingSegment* RetransmissionQueue::at(std::size_t index) const noexcept {
     return index < size_ ? &segments_[index] : nullptr;
 }

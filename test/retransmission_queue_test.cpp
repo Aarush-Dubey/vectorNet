@@ -1,6 +1,7 @@
 #include "vectornet/transport/retransmission_queue.hpp"
 #include "vectornet/transport/sequence.hpp"
 
+#include <array>
 #include <cstdint>
 #include <iostream>
 
@@ -71,10 +72,50 @@ int main() {
         return 1;
     }
     const auto final_ack = queue.acknowledge(0x00000020U, pool);
-    return expect(final_ack.released == 1, "final ACK release failed") &&
-                   expect(queue.empty(), "queue not empty after full ACK") &&
-                   expect(pool.available() == pool.capacity(),
-                          "pool capacity not restored")
+    if (!expect(final_ack.released == 1, "final ACK release failed") ||
+        !expect(queue.empty(), "queue not empty after full ACK") ||
+        !expect(pool.available() == pool.capacity(),
+                "pool capacity not restored")) {
+        return 1;
+    }
+
+    vectornet::alloc::PacketPool flight_pool(5);
+    RetransmissionQueue flight(5);
+    std::array<vectornet::alloc::PacketBuffer*, 5> buffers{};
+    for (std::size_t index = 0; index < buffers.size(); ++index) {
+        buffers[index] = flight_pool.acquire();
+        const std::uint32_t start = 1'000U + static_cast<std::uint32_t>(index) * 100U;
+        if (buffers[index] == nullptr ||
+            flight.enqueue({
+                .sequence_start = start,
+                .sequence_end = start + 100U,
+                .buffer = buffers[index],
+            }) != EnqueueStatus::accepted) {
+            return 1;
+        }
+    }
+    const auto prefix = flight.acknowledge(1'200, flight_pool);
+    const std::array<SackBlock, 2> sacks{{
+        {1'250, 1'350},  // partial coverage must not mark the missing segment
+        {1'300, 1'500},  // fully covers only the two received tail segments
+    }};
+    const auto sack_result = flight.apply_sacks(sacks);
+    std::array<PendingSegment*, 5> retransmit{};
+    const std::size_t selected = flight.collect_unsacked(retransmit);
+    if (!expect(prefix.released == 2, "fault-injection ACK prefix mismatch") ||
+        !expect(sack_result.newly_sacked == 2,
+                "SACK did not mark exactly received tail segments") ||
+        !expect(selected == 1, "selective retransmit chose extra segments") ||
+        !expect(retransmit[0]->sequence_start == 1'200 &&
+                    retransmit[0]->sequence_end == 1'300,
+                "selective retransmit did not choose injected loss")) {
+        return 1;
+    }
+    const auto cleanup = flight.clear(flight_pool);
+    return expect(cleanup.released == 3 && !cleanup.pool_error,
+                  "selective-flight cleanup failed") &&
+                   expect(flight_pool.available() == flight_pool.capacity(),
+                          "selective-flight pool leak")
                ? 0
                : 1;
 }

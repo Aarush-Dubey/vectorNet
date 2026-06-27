@@ -66,3 +66,11 @@ merge overlap and adjacency. A range beginning at cumulative ACK advances the AC
 and consumes every now-contiguous buffered range. SACK generation copies at most
 four stored half-open ranges in nearest-gap-first order. Range-table exhaustion is
 an explicit RX drop and never grows storage.
+
+## Sender SACK scoreboard
+
+TX marks a retained segment SACKed only when a reported block fully covers that
+segment's half-open range. Partial overlap never marks it. Retransmission selection
+walks the fixed queue in sequence order and returns only unsacked records. SACKed
+records remain retained for cumulative ACK release and later RTO/Karn accounting.
+The Phase-17 fault test loses one middle segment and selects only that hole.
