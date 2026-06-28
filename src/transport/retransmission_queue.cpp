@@ -106,6 +106,15 @@ std::size_t RetransmissionQueue::collect_unsacked(
     return written;
 }
 
+PendingSegment* RetransmissionQueue::lowest_unsacked() noexcept {
+    for (std::size_t index = 0; index < size_; ++index) {
+        if (!segments_[index].sacked) {
+            return &segments_[index];
+        }
+    }
+    return nullptr;
+}
+
 const PendingSegment* RetransmissionQueue::at(std::size_t index) const noexcept {
     return index < size_ ? &segments_[index] : nullptr;
 }

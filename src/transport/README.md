@@ -74,3 +74,11 @@ segment's half-open range. Partial overlap never marks it. Retransmission select
 walks the fixed queue in sequence order and returns only unsacked records. SACKed
 records remain retained for cumulative ACK release and later RTO/Karn accounting.
 The Phase-17 fault test loses one middle segment and selects only that hole.
+
+## Fast retransmit
+
+Three duplicate cumulative ACKs trigger retransmission of the lowest unsacked
+retained segment. TX records the retransmission time/count and saves the flight's
+highest sequence end as the recovery point. Further duplicate ACKs cannot retrigger
+inside that epoch; cumulative ACK must cross the recovery point first. This path is
+separate from the RTO path added in Phase 19.

@@ -417,10 +417,16 @@ uint32_t last_ack_seen = 0;
 on_ack(ack_seq):
     if ack_seq == last_ack_seen: dup_ack_count++
     else { dup_ack_count = 0; last_ack_seen = ack_seq; }
-    if dup_ack_count >= DUP_ACK_THRESHOLD:   // conventionally 3
+    if dup_ack_count == 3 and not in_recovery:
         retransmit(queue.lowest_unacked_unsacked_segment())
-        dup_ack_count = 0
+        recovery_point = queue.highest_sequence_end()
+        in_recovery = true
+    if ack_seq >= recovery_point:
+        in_recovery = false
 ```
+
+The trigger stamps the retransmission time and increments its retransmit count.
+Further duplicate ACKs are suppressed inside the same recovery epoch.
 
 ### 4.7 RTO estimation (RFC 6298) + Karn's algorithm
 

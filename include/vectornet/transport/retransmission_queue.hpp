@@ -52,6 +52,7 @@ public:
         std::span<const SackBlock> sacks) noexcept;
     [[nodiscard]] std::size_t collect_unsacked(
         std::span<PendingSegment*> output) noexcept;
+    [[nodiscard]] PendingSegment* lowest_unsacked() noexcept;
 
     [[nodiscard]] const PendingSegment* at(std::size_t index) const noexcept;
     [[nodiscard]] PendingSegment* at(std::size_t index) noexcept;
