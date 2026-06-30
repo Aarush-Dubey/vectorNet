@@ -7,7 +7,7 @@ Ethernet, ARP, IPv4 fragmentation, bounded reassembly, and the initialization-si
 packet pool, bounded owner-to-owner SPSC handoff, and the fixed transport wire
 format, explicit connection state table, fixed retransmission retention, and bounded
 RX reordering/SACK generation, selective sender recovery, and duplicate-ACK fast
-retransmit through Phase 18.
+retransmit and RFC 6298/Karn timeout state through Phase 19.
 
 ## Build
 

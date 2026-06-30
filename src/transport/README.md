@@ -82,3 +82,11 @@ retained segment. TX records the retransmission time/count and saves the flight'
 highest sequence end as the recovery point. Further duplicate ACKs cannot retrigger
 inside that epoch; cumulative ACK must cross the recovery point first. This path is
 separate from the RTO path added in Phase 19.
+
+## Retransmission timeout
+
+RFC 6298 state uses integer `CLOCK_MONOTONIC` nanoseconds. Initial/minimum RTO is
+1 s, maximum is 60 s, and clock granularity is 1 ms. First sample sets SRTT=R and
+RTTVAR=R/2; later samples use alpha 1/8 and beta 1/4. Samples from retransmitted
+segments are excluded under Karn's rule. Each timeout doubles the active RTO up to
+60 s; forward progress clears that backoff to the current computed RTO.

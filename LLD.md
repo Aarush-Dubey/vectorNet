@@ -431,24 +431,28 @@ Further duplicate ACKs are suppressed inside the same recovery epoch.
 ### 4.7 RTO estimation (RFC 6298) + Karn's algorithm
 
 ```cpp
-double srtt = -1, rttvar = 0;   // -1 sentinel = "no sample yet"
-const double ALPHA = 1.0/8, BETA = 1.0/4;
+uint64_t srtt_ns = 0, rttvar_ns = 0;
+bool initialized = false;
 
 on_rtt_sample(measured_rtt_ms, was_retransmitted):
     if was_retransmitted: return   // Karn's algorithm: ambiguous which
                                      // transmission this ACK corresponds to —
                                      // never let it update SRTT/RTTVAR.
-    if srtt < 0:
-        srtt = measured_rtt_ms; rttvar = measured_rtt_ms / 2;
+    if not initialized:
+        srtt = sample; rttvar = sample / 2; initialized = true
     else:
         rttvar = (1 - BETA) * rttvar + BETA * abs(srtt - measured_rtt_ms);
         srtt   = (1 - ALPHA) * srtt  + ALPHA * measured_rtt_ms;
-    rto = srtt + max(CLOCK_GRANULARITY_MS, 4 * rttvar);
-    rto = clamp(rto, RTO_MIN, RTO_MAX);
+    rto = srtt + max(1ms, 4 * rttvar)
+    rto = clamp(rto, 1s, 60s)
+
+on_timeout(): rto = min(2 * rto, 60s)
 ```
 
 A retransmitted segment's *original* send timestamp must be tagged so
 `was_retransmitted` can be checked when its ack (or SACK) eventually arrives.
+All timestamps use `CLOCK_MONOTONIC`. Initial RTO is one second. Forward progress
+clears timeout backoff to the estimator's current computed value.
 
 ### 4.8 AIMD congestion control
 
