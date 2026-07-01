@@ -474,21 +474,20 @@ on_ack_advances_cumulative(acked_bytes):
             cwnd += MSS       // one segment per cwnd acknowledged
 
 on_loss_signal(kind):   // kind = RTO_TIMEOUT | SACK_PARTIAL_LOSS
-    // Policy decided in Phase 21 — document whichever is actually implemented:
-    ssthresh = cwnd / 2
+    if already reduced in this recovery epoch: return
+    ssthresh = max(flight_bytes / 2, 2 * MSS)
     if kind == RTO_TIMEOUT:
-        cwnd = INITIAL_CWND; state = CcState::SLOW_START
+        cwnd = MSS; state = CcState::SLOW_START
     else:  // SACK_PARTIAL_LOSS — fast-recovery-style, no full reset
         cwnd = ssthresh; state = CcState::CONGESTION_AVOIDANCE
+    save recovery_point; mark epoch active
 ```
 
 The actual send limit is `min(cwnd, advertised_window_bytes)`. Flight bytes at or
 above that limit return zero send allowance.
 
-**This split must match `src/transport/README.md` exactly** — if the project
-only claims "AIMD" without the fast-recovery distinction, implement the simpler
-uniform response (both loss kinds behave identically) instead, so the code and
-the claim agree.
+An ACK crossing the saved recovery point ends the epoch. Until then, later loss
+signals cannot apply another multiplicative decrease.
 
 ---
 

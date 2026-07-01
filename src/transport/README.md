@@ -98,3 +98,11 @@ cumulatively acknowledged bytes, doubling per RTT under one ACK per segment.
 Congestion avoidance accumulates acknowledged bytes and adds exactly one MSS after
 one cwnd has been acknowledged. The wire send limit is always the smaller of cwnd
 and the peer's advertised available-byte window.
+
+## Loss response
+
+Both loss paths set `ssthresh=max(flight/2,2*MSS)`. RTO timeout then sets cwnd to
+one MSS and enters slow start. SACK/duplicate-ACK fast loss sets cwnd to ssthresh
+and stays in congestion avoidance. TX saves the flight recovery point and permits
+only one multiplicative decrease until cumulative ACK crosses it. These trajectories
+are intentionally distinct and are tested from identical starting flight state.
