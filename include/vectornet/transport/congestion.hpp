@@ -1,0 +1,43 @@
+#pragma once
+
+#include <cstdint>
+#include <limits>
+
+namespace vectornet::transport {
+
+inline constexpr std::uint32_t kInitialCongestionWindowSegments = 10;
+
+enum class CongestionState : std::uint8_t {
+    slow_start,
+    congestion_avoidance,
+};
+
+class CongestionController final {
+public:
+    explicit CongestionController(
+        std::uint32_t mss_bytes,
+        std::uint32_t initial_ssthresh_bytes =
+            std::numeric_limits<std::uint32_t>::max()) noexcept;
+
+    void on_ack(std::uint32_t acknowledged_bytes) noexcept;
+
+    [[nodiscard]] std::uint32_t congestion_window_bytes() const noexcept;
+    [[nodiscard]] std::uint32_t slow_start_threshold_bytes() const noexcept;
+    [[nodiscard]] CongestionState state() const noexcept;
+    [[nodiscard]] std::uint32_t effective_window_bytes(
+        std::uint16_t advertised_window_bytes) const noexcept;
+    [[nodiscard]] std::uint32_t send_allowance_bytes(
+        std::uint32_t flight_bytes,
+        std::uint16_t advertised_window_bytes) const noexcept;
+
+private:
+    void add_to_cwnd(std::uint64_t bytes) noexcept;
+
+    std::uint32_t mss_bytes_{1};
+    std::uint32_t cwnd_bytes_{kInitialCongestionWindowSegments};
+    std::uint32_t ssthresh_bytes_{std::numeric_limits<std::uint32_t>::max()};
+    std::uint64_t avoidance_acked_bytes_{0};
+    CongestionState state_{CongestionState::slow_start};
+};
+
+}  // namespace vectornet::transport

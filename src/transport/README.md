@@ -90,3 +90,11 @@ RFC 6298 state uses integer `CLOCK_MONOTONIC` nanoseconds. Initial/minimum RTO i
 RTTVAR=R/2; later samples use alpha 1/8 and beta 1/4. Samples from retransmitted
 segments are excluded under Karn's rule. Each timeout doubles the active RTO up to
 60 s; forward progress clears that backoff to the current computed RTO.
+
+## Congestion growth
+
+Congestion window is tracked in bytes and starts at ten MSS. Slow start adds newly
+cumulatively acknowledged bytes, doubling per RTT under one ACK per segment.
+Congestion avoidance accumulates acknowledged bytes and adds exactly one MSS after
+one cwnd has been acknowledged. The wire send limit is always the smaller of cwnd
+and the peer's advertised available-byte window.

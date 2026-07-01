@@ -458,16 +458,20 @@ clears timeout backoff to the estimator's current computed value.
 
 ```cpp
 enum class CcState { SLOW_START, CONGESTION_AVOIDANCE };
-double cwnd = INITIAL_CWND;       // segments
-double ssthresh = INFINITY;
+uint32_t cwnd = 10 * MSS;         // bytes
+uint32_t ssthresh = UINT32_MAX;
+uint64_t avoidance_acked = 0;
 CcState state = CcState::SLOW_START;
 
-on_ack_advances_cumulative():
+on_ack_advances_cumulative(acked_bytes):
     if state == SLOW_START:
-        cwnd += 1
+        cwnd += acked_bytes
         if cwnd >= ssthresh: state = CONGESTION_AVOIDANCE
     else:
-        cwnd += 1.0 / cwnd    // additive increase, ~1 segment per RTT
+        avoidance_acked += acked_bytes
+        when avoidance_acked >= cwnd:
+            avoidance_acked -= cwnd
+            cwnd += MSS       // one segment per cwnd acknowledged
 
 on_loss_signal(kind):   // kind = RTO_TIMEOUT | SACK_PARTIAL_LOSS
     // Policy decided in Phase 21 — document whichever is actually implemented:
@@ -477,6 +481,9 @@ on_loss_signal(kind):   // kind = RTO_TIMEOUT | SACK_PARTIAL_LOSS
     else:  // SACK_PARTIAL_LOSS — fast-recovery-style, no full reset
         cwnd = ssthresh; state = CcState::CONGESTION_AVOIDANCE
 ```
+
+The actual send limit is `min(cwnd, advertised_window_bytes)`. Flight bytes at or
+above that limit return zero send allowance.
 
 **This split must match `src/transport/README.md` exactly** — if the project
 only claims "AIMD" without the fast-recovery distinction, implement the simpler
