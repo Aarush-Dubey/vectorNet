@@ -77,6 +77,14 @@ a network-latency benchmark:
 scripts/phase22_instrument_gate.sh
 ```
 
-Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
-`sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
-or interruption. Unit tests must never call these scripts.
+`phase23_feth_dummynet.sh` creates only `feth0`/`feth1`, configures dummynet pipes
+`41001` and `41002`, loads only PF anchor `com.apple/vectornet`, runs one interleaved
+custom-vs-XNU-TCP RTT smoke trial, then restores PF, dummynet, and feth state:
+
+```sh
+scripts/phase23_feth_dummynet.sh
+```
+
+Scripts that open BPF devices or alter `dnctl`/PF state require explicit `sudo`,
+scope rules narrowly, snapshot prior state, and restore it on success, failure, or
+interruption. Unit tests must never call these scripts.

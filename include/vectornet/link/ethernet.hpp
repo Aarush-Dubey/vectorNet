@@ -78,6 +78,11 @@ public:
         EthernetFrameCallback callback,
         void* context) noexcept;
 
+    [[nodiscard]] std::error_code poll_frames_for(
+        EthernetFrameCallback callback,
+        void* context,
+        std::uint32_t timeout_ms) noexcept;
+
     [[nodiscard]] std::error_code send_frame(
         const MacAddress& destination,
         std::uint16_t ether_type,

@@ -65,6 +65,11 @@ public:
         FrameCallback callback,
         void* context) noexcept;
 
+    [[nodiscard]] std::error_code poll_frames_for(
+        FrameCallback callback,
+        void* context,
+        std::uint32_t timeout_ms) noexcept;
+
     [[nodiscard]] std::error_code send_frame(
         std::span<const std::byte> frame,
         TxMetadata* metadata = nullptr) noexcept;

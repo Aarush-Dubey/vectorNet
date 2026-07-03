@@ -5,6 +5,7 @@
 #endif
 
 #include <cstddef>
+#include <ctime>
 #include <memory>
 #include <span>
 #include <system_error>
@@ -27,6 +28,11 @@ public:
         FrameCallback callback,
         void* context) noexcept;
 
+    [[nodiscard]] std::error_code poll_frames_for(
+        FrameCallback callback,
+        void* context,
+        std::uint32_t timeout_ms) noexcept;
+
     [[nodiscard]] std::error_code send_frame(
         std::span<const std::byte> frame,
         TxMetadata* metadata) noexcept;
@@ -36,6 +42,10 @@ public:
     [[nodiscard]] BpfStatistics bpf_statistics(std::error_code& error) const noexcept;
 
 private:
+    [[nodiscard]] std::error_code poll_frames_impl(
+        FrameCallback callback,
+        void* context,
+        const timespec* timeout) noexcept;
     BpfBackend(
         int fd,
         int kqueue_fd,

@@ -355,6 +355,24 @@ std::unique_ptr<BpfBackend> BpfBackend::open(
 std::error_code BpfBackend::poll_frames(
     FrameCallback callback,
     void* context) noexcept {
+    return poll_frames_impl(callback, context, nullptr);
+}
+
+std::error_code BpfBackend::poll_frames_for(
+    FrameCallback callback,
+    void* context,
+    std::uint32_t timeout_ms) noexcept {
+    const timespec timeout{
+        .tv_sec = static_cast<time_t>(timeout_ms / 1'000U),
+        .tv_nsec = static_cast<long>(timeout_ms % 1'000U) * 1'000'000L,
+    };
+    return poll_frames_impl(callback, context, &timeout);
+}
+
+std::error_code BpfBackend::poll_frames_impl(
+    FrameCallback callback,
+    void* context,
+    const timespec* timeout) noexcept {
     if (callback == nullptr) {
         return std::make_error_code(std::errc::invalid_argument);
     }
@@ -362,10 +380,13 @@ std::error_code BpfBackend::poll_frames(
     struct kevent event{};
     int ready = 0;
     do {
-        ready = ::kevent(kqueue_fd_, nullptr, 0, &event, 1, nullptr);
+        ready = ::kevent(kqueue_fd_, nullptr, 0, &event, 1, timeout);
     } while (ready < 0 && errno == EINTR);
     if (ready < 0) {
         return errno_error();
+    }
+    if (ready == 0) {
+        return std::make_error_code(std::errc::timed_out);
     }
     if ((event.flags & EV_ERROR) != 0) {
         return {static_cast<int>(event.data), std::generic_category()};

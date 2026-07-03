@@ -25,5 +25,9 @@ macOS/XNU build, XNU CUBIC baseline, chip, feth MTU, dummynet/PF rules, timestam
 source, thermal state, trial ordering, sample count, and variance. Proxy measurements
 must be labeled as proxies and cannot support cache-miss claims.
 
+Phase 23 adds only the PF/dummynet harness smoke gate. Its raw logs validate scoped
+pipe/anchor setup, teardown, identical payload/duration/order, and timestamp labels.
+They are not the final Phase 25 comparison report.
+
 Optional cross-host confirmation records both Macs and NICs in a separate report
 subsection. Its samples never enter canonical feth aggregates.

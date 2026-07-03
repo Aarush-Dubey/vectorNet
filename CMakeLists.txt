@@ -67,6 +67,7 @@ target_compile_options(vectornet_link PRIVATE
 add_library(vectornet_net STATIC
     src/net/fragmentation.cpp
     src/net/ipv4.cpp
+    src/net/network_stack.cpp
     src/net/reassembly.cpp
 )
 add_library(vectornet::net ALIAS vectornet_net)
@@ -75,6 +76,7 @@ target_include_directories(vectornet_net
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+target_link_libraries(vectornet_net PUBLIC vectornet::link)
 target_compile_options(vectornet_net PRIVATE
     -Wall
     -Wextra
@@ -94,6 +96,7 @@ if(VECTORNET_BUILD_FUZZERS)
 endif()
 
 add_library(vectornet_transport STATIC
+    src/transport/connection.cpp
     src/transport/congestion.cpp
     src/transport/fast_retransmit.cpp
     src/transport/receive_ranges.cpp
@@ -204,6 +207,23 @@ add_executable(vectornet_instrument_probe tools/instrument_probe.cpp)
 target_compile_features(vectornet_instrument_probe PRIVATE cxx_std_20)
 target_link_libraries(vectornet_instrument_probe PRIVATE vectornet::instrument)
 target_compile_options(vectornet_instrument_probe PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
+add_executable(vectornet_bench_runner tools/bench_runner.cpp)
+target_compile_features(vectornet_bench_runner PRIVATE cxx_std_20)
+target_link_libraries(
+    vectornet_bench_runner
+    PRIVATE
+        vectornet::net
+        vectornet::transport
+        vectornet::instrument
+)
+target_compile_options(vectornet_bench_runner PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -455,6 +475,18 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.congestion COMMAND vectornet_congestion_test)
+
+    add_executable(vectornet_connection_test test/connection_test.cpp)
+    target_compile_features(vectornet_connection_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_connection_test PRIVATE vectornet::transport)
+    target_compile_options(vectornet_connection_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.connection COMMAND vectornet_connection_test)
 
     add_executable(vectornet_instrument_test test/instrument_test.cpp)
     target_compile_features(vectornet_instrument_test PRIVATE cxx_std_20)

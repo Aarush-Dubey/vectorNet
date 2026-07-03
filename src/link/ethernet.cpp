@@ -163,6 +163,20 @@ std::error_code EthernetEndpoint::poll_frames(
     return link_->poll_frames(&dispatch_frame, &dispatch);
 }
 
+std::error_code EthernetEndpoint::poll_frames_for(
+    EthernetFrameCallback callback,
+    void* context,
+    std::uint32_t timeout_ms) noexcept {
+    if (!link_) {
+        return std::make_error_code(std::errc::bad_file_descriptor);
+    }
+    if (callback == nullptr) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+    DispatchContext dispatch{&drop_counters_, callback, context};
+    return link_->poll_frames_for(&dispatch_frame, &dispatch, timeout_ms);
+}
+
 std::error_code EthernetEndpoint::send_frame(
     const MacAddress& destination,
     std::uint16_t ether_type,
