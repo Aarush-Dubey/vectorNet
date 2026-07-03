@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
+#include <ctime>
 #include <cstring>
 #include <ifaddrs.h>
 #include <limits>
@@ -441,7 +442,12 @@ std::error_code BpfBackend::poll_frames(
     return {};
 }
 
-std::error_code BpfBackend::send_frame(std::span<const std::byte> frame) noexcept {
+std::error_code BpfBackend::send_frame(
+    std::span<const std::byte> frame,
+    TxMetadata* metadata) noexcept {
+    if (metadata != nullptr) {
+        *metadata = {};
+    }
     if (frame.size() < kEthernetHeaderBytes) {
         return std::make_error_code(std::errc::invalid_argument);
     }
@@ -454,9 +460,31 @@ std::error_code BpfBackend::send_frame(std::span<const std::byte> frame) noexcep
         return std::make_error_code(std::errc::value_too_large);
     }
 
-    const ssize_t written = ::write(fd_, frame.data(), frame.size());
-    if (written < 0) {
+    timespec before{};
+    if (::clock_gettime(CLOCK_MONOTONIC, &before) != 0) {
         return errno_error();
+    }
+    const ssize_t written = ::write(fd_, frame.data(), frame.size());
+    const int write_error = written < 0 ? errno : 0;
+    timespec after{};
+    if (::clock_gettime(CLOCK_MONOTONIC, &after) != 0) {
+        return errno_error();
+    }
+    if (before.tv_sec < 0 || before.tv_nsec < 0 || after.tv_sec < 0 ||
+        after.tv_nsec < 0) {
+        return std::make_error_code(std::errc::value_too_large);
+    }
+    if (metadata != nullptr) {
+        constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
+        metadata->monotonic_before_ns =
+            static_cast<std::uint64_t>(before.tv_sec) * kNanosecondsPerSecond +
+            static_cast<std::uint64_t>(before.tv_nsec);
+        metadata->monotonic_after_ns =
+            static_cast<std::uint64_t>(after.tv_sec) * kNanosecondsPerSecond +
+            static_cast<std::uint64_t>(after.tv_nsec);
+    }
+    if (written < 0) {
+        return {write_error, std::generic_category()};
     }
     if (static_cast<std::size_t>(written) != frame.size()) {
         return std::make_error_code(std::errc::io_error);

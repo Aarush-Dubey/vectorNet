@@ -69,6 +69,14 @@ ThreadSanitizer and aborts on the first race report:
 scripts/phase12_tsan.sh
 ```
 
+`phase22_instrument_gate.sh` runs a labeled `CLOCK_MONOTONIC` clock-path self-check
+and writes full 64-bucket CSV/JSONL under ignored `.vectornet-artifacts/`. It is not
+a network-latency benchmark:
+
+```sh
+scripts/phase22_instrument_gate.sh
+```
+
 Future scripts that open BPF devices or alter `dnctl`/PF state must require explicit
 `sudo`, scope rules narrowly, snapshot prior state, and restore it on success, failure,
 or interruption. Unit tests must never call these scripts.

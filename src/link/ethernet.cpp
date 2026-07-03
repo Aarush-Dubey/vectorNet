@@ -166,7 +166,8 @@ std::error_code EthernetEndpoint::poll_frames(
 std::error_code EthernetEndpoint::send_frame(
     const MacAddress& destination,
     std::uint16_t ether_type,
-    std::span<const std::byte> payload) noexcept {
+    std::span<const std::byte> payload,
+    TxMetadata* metadata) noexcept {
     if (!link_ || !tx_buffer_) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
@@ -189,7 +190,8 @@ std::error_code EthernetEndpoint::send_frame(
         return std::make_error_code(std::errc::message_size);
     }
     return link_->send_frame(
-        std::span<const std::byte>(tx_buffer_.get(), frame_bytes));
+        std::span<const std::byte>(tx_buffer_.get(), frame_bytes),
+        metadata);
 }
 
 InterfaceInfo EthernetEndpoint::interface_info() const noexcept {

@@ -27,7 +27,9 @@ public:
         FrameCallback callback,
         void* context) noexcept;
 
-    [[nodiscard]] std::error_code send_frame(std::span<const std::byte> frame) noexcept;
+    [[nodiscard]] std::error_code send_frame(
+        std::span<const std::byte> frame,
+        TxMetadata* metadata) noexcept;
 
     [[nodiscard]] InterfaceInfo interface_info() const noexcept;
 

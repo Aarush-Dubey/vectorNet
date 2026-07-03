@@ -513,13 +513,13 @@ struct LatencySample {
 };
 
 struct Histogram {
-    // Fixed log-linear bucket scheme (e.g. HDR-histogram style) rather than a
-    // single running percentile — needed so bench/report.md can show full
-    // distribution shape, not just a point estimate.
-    std::vector<uint64_t> buckets;
+    std::array<uint64_t, 64> buckets;
+    uint64_t sample_count;
+    uint64_t rejected_samples;
     void record(uint64_t latency_ns);
     uint64_t percentile(double p) const;
-    size_t sample_count() const;
+    bool write_csv(FILE*, TimestampSource) const;
+    bool write_jsonl(FILE*, TimestampSource) const;
 };
 ```
 
@@ -549,10 +549,9 @@ separate. No hardware timestamping precision is implied.
 
 ## 6. Concurrency & memory model summary
 
-- Shared mutable state crossing threads: pool freelist (§3.3), retransmission
-  queue (if TX thread and a timer thread both touch it — guard with the same
-  lock-free discipline or a single-owner-thread rule, decide explicitly in
-  Phase 15/19 and document it).
+- Shared mutable state crosses threads only through the bounded SPSC rings in
+  §3.3. TX alone owns retransmission, congestion, and RTO state; RX alone owns
+  receive ranges and reassembly. Timers are kqueue events in those owner threads.
 - Everything else (ARP cache, reassembly table, receive buffer) is owned by a
   single thread (RX) and never touched from TX/timer threads directly — cross-
   thread requests go through a message/queue handoff, not shared mutation.

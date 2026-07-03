@@ -8,7 +8,8 @@ packet pool, bounded owner-to-owner SPSC handoff, and the fixed transport wire
 format, explicit connection state table, fixed retransmission retention, and bounded
 RX reordering/SACK generation, selective sender recovery, and duplicate-ACK fast
 retransmit, RFC 6298/Karn timeout state, and slow-start/additive congestion growth
-with differentiated RTO/SACK loss recovery through Phase 21.
+with differentiated RTO/SACK loss recovery, Darwin timestamp sources, and fixed
+latency histograms through Phase 22.
 
 ## Build
 

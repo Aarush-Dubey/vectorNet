@@ -81,7 +81,8 @@ public:
     [[nodiscard]] std::error_code send_frame(
         const MacAddress& destination,
         std::uint16_t ether_type,
-        std::span<const std::byte> payload) noexcept;
+        std::span<const std::byte> payload,
+        TxMetadata* metadata = nullptr) noexcept;
 
     [[nodiscard]] InterfaceInfo interface_info() const noexcept;
     [[nodiscard]] EthernetDropCounters drop_counters() const noexcept;

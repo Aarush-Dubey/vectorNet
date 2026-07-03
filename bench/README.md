@@ -1,9 +1,13 @@
 # Benchmark artifacts and evidence
 
-No transport-performance result exists through Phase 21. Most evidence files are
+No transport-performance result exists through Phase 22. Most evidence files are
 correctness-gate records, not performance results. Phase 11 commits its allocation
 interposer run solely as evidence for the zero-hot-window-allocation invariant; the
 operation count is not a latency or throughput claim.
+
+Phase 22 commits a 64-bucket consecutive-clock-call self-check. It validates fixed
+histogram/export plumbing and records the application monotonic timestamp label.
+Its values are not packet, application-message, or network RTT measurements.
 
 Phase 03 commits a sanitized Instruments System Trace syscall timeline. Raw `.trace`
 bundles and XML stay local because they contain device and binary UUIDs. The committed

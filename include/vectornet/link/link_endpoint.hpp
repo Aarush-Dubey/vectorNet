@@ -34,6 +34,11 @@ struct CaptureMetadata {
     std::uint32_t wire_length{0};
 };
 
+struct TxMetadata {
+    std::uint64_t monotonic_before_ns{0};
+    std::uint64_t monotonic_after_ns{0};
+};
+
 struct BpfStatistics {
     std::uint32_t received{0};
     std::uint32_t dropped{0};
@@ -60,7 +65,9 @@ public:
         FrameCallback callback,
         void* context) noexcept;
 
-    [[nodiscard]] std::error_code send_frame(std::span<const std::byte> frame) noexcept;
+    [[nodiscard]] std::error_code send_frame(
+        std::span<const std::byte> frame,
+        TxMetadata* metadata = nullptr) noexcept;
 
     [[nodiscard]] InterfaceInfo interface_info() const noexcept;
 

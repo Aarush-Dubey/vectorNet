@@ -102,6 +102,24 @@ add_library(vectornet_transport STATIC
     src/transport/state_machine.cpp
     src/transport/wire.cpp
 )
+
+add_library(vectornet_instrument STATIC
+    src/instrument/histogram.cpp
+    src/instrument/timestamp.cpp
+)
+add_library(vectornet::instrument ALIAS vectornet_instrument)
+target_compile_features(vectornet_instrument PUBLIC cxx_std_20)
+target_include_directories(vectornet_instrument
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_options(vectornet_instrument PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
 add_library(vectornet::transport ALIAS vectornet_transport)
 target_compile_features(vectornet_transport PUBLIC cxx_std_20)
 target_include_directories(vectornet_transport
@@ -175,6 +193,17 @@ add_executable(vectornet_packet_pool_bench tools/packet_pool_bench.cpp)
 target_compile_features(vectornet_packet_pool_bench PRIVATE cxx_std_20)
 target_link_libraries(vectornet_packet_pool_bench PRIVATE vectornet::alloc)
 target_compile_options(vectornet_packet_pool_bench PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+)
+
+add_executable(vectornet_instrument_probe tools/instrument_probe.cpp)
+target_compile_features(vectornet_instrument_probe PRIVATE cxx_std_20)
+target_link_libraries(vectornet_instrument_probe PRIVATE vectornet::instrument)
+target_compile_options(vectornet_instrument_probe PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -426,4 +455,16 @@ if(BUILD_TESTING)
         -Wsign-conversion
     )
     add_test(NAME vectornet.congestion COMMAND vectornet_congestion_test)
+
+    add_executable(vectornet_instrument_test test/instrument_test.cpp)
+    target_compile_features(vectornet_instrument_test PRIVATE cxx_std_20)
+    target_link_libraries(vectornet_instrument_test PRIVATE vectornet::instrument)
+    target_compile_options(vectornet_instrument_test PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+    )
+    add_test(NAME vectornet.instrument COMMAND vectornet_instrument_test)
 endif()

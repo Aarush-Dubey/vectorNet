@@ -46,11 +46,13 @@ std::error_code LinkEndpoint::poll_frames(
     return impl_->backend->poll_frames(callback, context);
 }
 
-std::error_code LinkEndpoint::send_frame(std::span<const std::byte> frame) noexcept {
+std::error_code LinkEndpoint::send_frame(
+    std::span<const std::byte> frame,
+    TxMetadata* metadata) noexcept {
     if (!impl_ || !impl_->backend) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
-    return impl_->backend->send_frame(frame);
+    return impl_->backend->send_frame(frame, metadata);
 }
 
 InterfaceInfo LinkEndpoint::interface_info() const noexcept {
