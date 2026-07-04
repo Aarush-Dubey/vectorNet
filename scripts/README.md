@@ -85,6 +85,14 @@ custom-vs-XNU-TCP RTT smoke trial, then restores PF, dummynet, and feth state:
 scripts/phase23_feth_dummynet.sh
 ```
 
+`phase24_counter_proxy.sh` records Instruments CPU Counters template availability,
+sanitizes the exported TOC, and falls back to repeated packet-pool wall-clock proxy
+logs when no HITM/cache-to-cache counter is exposed:
+
+```sh
+scripts/phase24_counter_proxy.sh
+```
+
 Scripts that open BPF devices or alter `dnctl`/PF state require explicit `sudo`,
 scope rules narrowly, snapshot prior state, and restore it on success, failure, or
 interruption. Unit tests must never call these scripts.

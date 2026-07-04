@@ -1,10 +1,10 @@
 # Low-Level Design — Userspace Network Stack over macOS BPF
 
-Companion to `HLD.md` (architecture/data-flow) and `AGENTS.md` (phase/commit plan).
-This document specifies data structures, wire formats, algorithms, and state
-machines per module. Struct layouts are illustrative C++20 — adjust field order
-for actual alignment needs, but keep the cache-line claims in `alloc` accurate to
-whatever ships.
+This document is the module-level design for vectorNet. It specifies the concrete
+data structures, wire formats, algorithms, state machines, and ownership rules used
+by the userspace Ethernet/IPv4/custom-transport stack described in `HLD.md`.
+Struct layouts are illustrative C++20; actual code may reorder fields for alignment,
+but cache-line and allocation claims must stay true to the shipped implementation.
 
 ---
 
@@ -26,7 +26,7 @@ enum class TxApi : uint8_t { Bpf, AfNdrv };
 
 struct TxChannel {
     int     fd;
-    TxApi   api;  // chosen only from current-kernel Phase-02 spike evidence
+    TxApi   api;  // chosen only from current-kernel feth probe evidence
 };
 ```
 
@@ -35,7 +35,7 @@ Canonical setup creates `feth0` and `feth1`, peers them with
 processes on opposite sides. `lo0` is never accepted because its
 `DLT_NULL`/`DLT_LOOP` records omit the Ethernet framing under test.
 
-Before Phase 02 can select `TxApi`, the spike performs two independent trials on
+Before initialization selects `TxApi`, the feth probe performs two independent trials on
 the current macOS build:
 
 1. Bind BPF RX to `feth1`, require `DLT_EN10MB`, inject one complete marked frame
@@ -89,11 +89,11 @@ wrapper. This boundary is mandatory: selected macOS 26.5.1 feth panics in kernel
 mbuf validation when given a 10-byte BPF-written frame.
 
 The selected Darwin SDK and public XNU header do not expose `BIOCSETZBUF`,
-`BIOCROTZBUF`, or `BIOCGETZMAX`. The post-Phase-03 compile probe on branch
+`BIOCROTZBUF`, or `BIOCGETZMAX`. The compile probe on branch
 `spike/darwin-bpf-zbuf` confirmed all three absent from macOS 26.5 SDK headers and
 rejected zbuf promotion; no runtime probe was attempted. Never define FreeBSD ioctl
-values locally. The numbered main path remains buffered until a later phase contains
-both support evidence and a committed measurement justifying promotion.
+values locally. The main path remains buffered until a later change contains
+both support evidence and a reproducible measurement justifying promotion.
 
 ### 1.2 ARP cache
 
@@ -106,8 +106,8 @@ struct ArpEntry {
 };
 
 struct ArpCache {
-    // Fixed-capacity storage allocated during initialization. Phase 05 uses a
-    // bounded linear scan because expected peer count is small.
+    // Fixed-capacity storage allocated during initialization. A bounded linear scan
+    // is enough because the canonical topology has very few peers.
     std::vector<ArpEntry> entries;
     uint64_t ttl_ns; // default 60 seconds
 };
@@ -118,17 +118,18 @@ struct ArpCache {
 resolve(ip):
     if entries[ip] exists and not expired: return entries[ip].mac
     send ARP request for ip
-    return nullopt   // Phase 06 adds in-flight suppression and pending frames
+    return nullopt   // pending queue handles in-flight suppression and frames
 
 on_arp_reply(ip, mac):
     entries[ip] = { ip, mac, now + TTL, true }
 ```
 
 Insertion updates an existing address, reuses an empty/expired slot, or returns
-`cache_full`; it never grows storage. Phase 06 adds pending-frame storage, request
-suppression, and refresh within the fixed five-second margin.
+`cache_full`; it never grows storage. Pending-frame storage, request suppression,
+and refresh logic stay inside fixed-capacity arrays with a five-second refresh
+margin.
 
-Phase 06 preallocates bounded pending-frame and resolution-state arrays. Each pending
+The ARP layer preallocates bounded pending-frame and resolution-state arrays. Each pending
 slot holds at most 2,048 bytes. First miss sends one request; later frames for that
 target share the in-flight state. Retry interval is 250ms, maximum attempts is three,
 and pending deadline is one second. Reply or gratuitous ARP learning flushes every
@@ -246,7 +247,7 @@ The default pool allocates 4,096 buffers during initialization. A buffer holds o
 MTU-class frame plus headroom. Pool exhaustion returns `nullptr`; it never falls
 back to the heap. Invalid and double releases are rejected and counted.
 
-### 3.2 Freelist (single-threaded variant, Phase 11)
+### 3.2 Freelist (single-threaded variant)
 
 ```cpp
 class Pool {
@@ -267,13 +268,13 @@ public:
 };
 ```
 
-The Phase-11 gate injects a Darwin DYLD interposer for `malloc`, `calloc`,
+The allocation gate injects a Darwin DYLD interposer for `malloc`, `calloc`,
 `realloc`, `free`, scalar/array `new`, and scalar/array `delete`. Gate control and
-symbol lookup happen before the hot window. The committed run covers 5,120,000
+symbol lookup happen before the hot window. The allocation gate covers 5,120,000
 pool operations with zero observed allocation/deallocation calls; this establishes
 only the allocation invariant, not a throughput result.
 
-### 3.3 Owner-local pool + bounded SPSC handoff (Phase 12)
+### 3.3 Owner-local pool + bounded SPSC handoff
 
 Packet pools are not concurrently mutated. The owner thread acquires and releases
 its buffers. It sends buffer pointers through a bounded SPSC ring; the consumer
@@ -295,8 +296,8 @@ struct SpscRing {
 
 Capacity is a power of two; full/empty states return explicit failure. Producer and
 consumer cursors occupy separate 64-byte cache lines. This avoids shared freelist
-mutation, ABA tags, and 128-bit CAS assumptions. Phase 12 commits a TSan-clean
-million-transfer handoff/recycle run.
+mutation, ABA tags, and 128-bit CAS assumptions. The stress gate runs a
+million-transfer handoff/recycle scenario under TSan-capable builds.
 
 ---
 
@@ -341,8 +342,8 @@ plus the 20-byte IPv4 header, avoiding IP fragmentation in ordinary transport us
 | any | receive RST | CLOSED (abort, notify app) |
 
 Any transition not listed is invalid. It moves to CLOSED, requests at most one RST
-for the connection attempt, and emits an application-error action. Phase 14's
-exhaustive test covers every state/event pair.
+for the connection attempt, and emits an application-error action. The state-machine
+test covers every state/event pair.
 
 ### 4.3 Retransmission queue (sender)
 
@@ -531,8 +532,8 @@ The custom stack has three distinct packet timestamps:
   after the selected BPF `write()` or `AF_NDRV` `send()`. No kernel-assigned or hardware TX completion timestamp is
   exposed for this path. The interval includes syscall entry/exit overhead.
 - **Application RTT**: one process records `CLOCK_MONOTONIC` before a request and
-  after its response or acknowledgement. Phase 25 uses this as the primary latency
-  comparison so both transports and both feth processes share one monotonic clock.
+  after its response or acknowledgement. This is the primary latency comparison so
+  both transports and both feth processes share one monotonic clock.
 
 The kernel-TCP baseline enables `SO_TIMESTAMP_MONOTONIC` on its socket and reads
 `SCM_TIMESTAMP_MONOTONIC` from `recvmsg()` control messages. That timestamp is not
@@ -540,7 +541,7 @@ used or described as the BPF timestamp source. Packet-level BPF and socket-cmsg
 measurements are diagnostic because their capture points differ; the report must
 not present them as equal-fidelity one-way latency measurements.
 
-Every raw run records timestamp source, macOS build, chip, feth interfaces/MTU,
+Every raw run should record timestamp source, macOS build, chip, feth interfaces/MTU,
 dummynet/PF configuration, selected TX API, and whether Instruments exposed the
 requested counters. Optional cross-host runs additionally record NICs and remain
 separate. No hardware timestamping precision is implied.
@@ -569,5 +570,4 @@ separate. No hardware timestamping precision is implied.
 | Reassembly timeout fires mid-copy | Timer sweep only runs between RX-thread processing steps (single-owner-thread rule), so no fragment copy is interrupted |
 | RTO fires for a segment that was already SACKed | Check `sacked` flag before retransmitting in the RTO handler, not just in the SACK-processing path |
 
-See `HLD.md` §6 for the rationale behind these boundaries and `AGENTS.md` for
-which phase each piece belongs to.
+See `HLD.md` §6 for the rationale behind these boundaries.

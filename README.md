@@ -9,7 +9,7 @@ format, explicit connection state table, fixed retransmission retention, and bou
 RX reordering/SACK generation, selective sender recovery, and duplicate-ACK fast
 retransmit, RFC 6298/Karn timeout state, and slow-start/additive congestion growth
 with differentiated RTO/SACK loss recovery, Darwin timestamp sources, and fixed
-latency histograms through Phase 22.
+latency histograms.
 
 ## Build
 
@@ -22,15 +22,15 @@ ctest --test-dir build --output-on-failure
 Unit tests require no elevated privileges. Later raw-link and dummynet integration
 scripts will isolate every privileged action under `scripts/` and restore host state.
 
-The Phase 10 sanitizer gate needs upstream libFuzzer. Xcode 26.6's Apple Clang package
-does not include `libclang_rt.fuzzer_osx.a` on this host, so the script uses keg-only
-Homebrew LLVM without replacing the normal Apple Clang toolchain:
+The reassembly fuzz gate needs upstream libFuzzer. Xcode 26.6's Apple Clang package
+does not include `libclang_rt.fuzzer_osx.a` on the reference host, so the script uses
+keg-only Homebrew LLVM without replacing the normal Apple Clang toolchain:
 
 ```sh
 brew install llvm
 scripts/phase10_reassembly_fuzz.sh
 ```
 
-See `AGENTS.md` for the phase gates, `HLD.md` for architecture, and `LLD.md` for
-data structures and algorithms. Performance statements remain hypotheses until a
-committed benchmark run supports them.
+See `HLD.md` for architecture and `LLD.md` for data structures, wire formats, and
+algorithms. Performance statements remain hypotheses until a reproducible benchmark
+run supports them.

@@ -1,33 +1,35 @@
 # Benchmark artifacts and evidence
 
-No transport-performance result exists through Phase 22. Most evidence files are
-correctness-gate records, not performance results. Phase 11 commits its allocation
-interposer run solely as evidence for the zero-hot-window-allocation invariant; the
-operation count is not a latency or throughput claim.
+Benchmark scripts generate raw output locally under ignored artifact directories.
+The cleaned public repository keeps the harnesses and documentation, but does not
+publish machine-specific evidence logs, packet captures, Instruments bundles, panic
+reports, or interface metadata.
 
-Phase 22 commits a 64-bucket consecutive-clock-call self-check. It validates fixed
-histogram/export plumbing and records the application monotonic timestamp label.
-Its values are not packet, application-message, or network RTT measurements.
+Correctness-gate records are not transport-performance results. Allocation-interposer
+runs establish the zero-hot-window-allocation invariant only; operation counts are
+not latency or throughput claims.
 
-Phase 03 commits a sanitized Instruments System Trace syscall timeline. Raw `.trace`
-bundles and XML stay local because they contain device and binary UUIDs. The committed
-CSV retains each relevant syscall's relative start time, duration, and return value.
-`dtruss` logs record its expected zero-row result under default SIP; SIP was not
-weakened.
+The histogram gate validates fixed histogram/export plumbing and records the
+application monotonic timestamp label. Its values are not packet,
+application-message, or network RTT measurements.
 
-Phase 04 safety evidence records a reproducible selected-kernel feth panic caused by
-a 10-byte raw BPF write. Raw panic reports stay local because they contain UUIDs;
-committed evidence retains sanitized cause, timestamps, and report hashes. Production
-TX now rejects malformed frame lengths before the syscall.
+System Trace runs use Instruments through `xctrace`. Raw `.trace` bundles and XML
+stay local because they can contain device and binary UUIDs. `dtruss` is expected to
+produce zero syscall rows under default SIP on current macOS; SIP is not weakened.
 
-Future primary runs use `feth0`/`feth1` and must commit raw output identifying the
-macOS/XNU build, XNU CUBIC baseline, chip, feth MTU, dummynet/PF rules, timestamp
-source, thermal state, trial ordering, sample count, and variance. Proxy measurements
-must be labeled as proxies and cannot support cache-miss claims.
+Safety evidence for malformed raw BPF writes stays local because panic reports can
+contain machine UUID metadata. Production TX rejects malformed frame lengths before
+the syscall.
 
-Phase 23 adds only the PF/dummynet harness smoke gate. Its raw logs validate scoped
-pipe/anchor setup, teardown, identical payload/duration/order, and timestamp labels.
-They are not the final Phase 25 comparison report.
+Primary runs use `feth0`/`feth1` and must record macOS/XNU build, XNU CUBIC baseline,
+chip, feth MTU, dummynet/PF rules, timestamp source, thermal state, trial ordering,
+sample count, and variance. Proxy measurements must be labeled as proxies and cannot
+support cache-miss claims.
+
+The PF/dummynet harness is a smoke gate for scoped pipe/anchor setup, teardown,
+identical payload/duration/order, and timestamp labels. Instruments CPU Counters
+support is treated as capability evidence; without a direct HITM/cache-to-cache
+event, packet-pool measurements are wall-clock/throughput proxies only.
 
 Optional cross-host confirmation records both Macs and NICs in a separate report
 subsection. Its samples never enter canonical feth aggregates.

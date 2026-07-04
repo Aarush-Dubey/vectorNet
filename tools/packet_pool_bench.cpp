@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <dlfcn.h>
 
 namespace {
@@ -17,6 +18,16 @@ constexpr std::size_t kBatchSize = 128;
 constexpr std::size_t kIterations = 20'000;
 constexpr std::size_t kCounterCount = 8;
 volatile std::uintptr_t calibration_sink = 0;
+
+[[nodiscard]] std::uint64_t monotonic_ns() noexcept {
+    timespec value{};
+    if (::clock_gettime(CLOCK_MONOTONIC, &value) != 0 || value.tv_sec < 0 ||
+        value.tv_nsec < 0) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(value.tv_sec) * 1'000'000'000ULL +
+           static_cast<std::uint64_t>(value.tv_nsec);
+}
 
 __attribute__((noinline)) bool exercise_interposed_symbols() {
     void* malloc_block = std::malloc(17);
@@ -73,6 +84,7 @@ int main() {
     }
 
     gate_begin();
+    const std::uint64_t hot_begin_ns = monotonic_ns();
     for (std::size_t iteration = 0; iteration < kIterations; ++iteration) {
         for (std::size_t index = 0; index < batch.size(); ++index) {
             batch[index] = pool.acquire();
@@ -89,6 +101,7 @@ int main() {
             }
         }
     }
+    const std::uint64_t hot_end_ns = monotonic_ns();
     std::array<std::uint64_t, kCounterCount> counts{};
     gate_end(counts.data(), counts.size());
 
@@ -97,9 +110,16 @@ int main() {
         total += count;
     }
     const auto statistics = pool.statistics();
+    const std::uint64_t duration_ns =
+        hot_end_ns >= hot_begin_ns ? hot_end_ns - hot_begin_ns : 0;
+    const double operations_per_second = duration_ns == 0
+        ? 0.0
+        : static_cast<double>(kIterations * kBatchSize * 2) *
+              1'000'000'000.0 / static_cast<double>(duration_ns);
     std::printf(
         "{\"phase\":11,\"gate\":\"packet-pool-hot-window-allocation\","
         "\"iterations\":%zu,\"batch\":%zu,\"operations\":%zu,"
+        "\"duration_ns\":%llu,\"operations_per_second\":%.3f,"
         "\"malloc\":%llu,\"calloc\":%llu,\"realloc\":%llu,"
         "\"free\":%llu,\"new\":%llu,\"new_array\":%llu,"
         "\"delete\":%llu,\"delete_array\":%llu,\"total\":%llu,"
@@ -109,6 +129,8 @@ int main() {
         kIterations,
         kBatchSize,
         kIterations * kBatchSize * 2,
+        static_cast<unsigned long long>(duration_ns),
+        operations_per_second,
         static_cast<unsigned long long>(counts[0]),
         static_cast<unsigned long long>(counts[1]),
         static_cast<unsigned long long>(counts[2]),
